@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # 1. High-Performance REST API Backend for Web & Mobile Clients
+  api:
+    build: .
+    container_name: synapse-titan-api
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    command: ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # 2. Interactive Analytical Web Dashboard
+  web:
+    build: .
+    container_name: synapse-titan-dashboard
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    command: ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
+  # 3. Background Market Observer & Alert Dispatcher Daemon
+  observer:
+    build: .
+    container_name: synapse-titan-observer
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    command: ["python", "monitor.py", "--interval", "900", "--min-prob", "0.55"]

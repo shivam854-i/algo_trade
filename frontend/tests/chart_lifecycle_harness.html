@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lightweight Charts Lifecycle & Canvas Release Stress Test</title>
+  <script src="/node_modules/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 20px; }
+    #chart-wrapper { width: 800px; height: 380px; border: 1px solid #334155; margin: 20px 0; }
+    .pass { color: #4ade80; }
+    .fail { color: #f87171; }
+    pre { background: #1e293b; padding: 15px; border-radius: 8px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>TradingView Lightweight Charts Unmounting & Canvas Stress Harness</h1>
+  <div id="chart-wrapper"></div>
+  <pre id="output">Running stress test...</pre>
+
+  <script>
+    const outputEl = document.getElementById("output");
+    const container = document.getElementById("chart-wrapper");
+
+    function log(msg) {
+      outputEl.textContent += "\n" + msg;
+      console.log(msg);
+    }
+
+    window.__TEST_RESULTS__ = {
+      status: "RUNNING",
+      tests: [],
+      memory: {},
+    };
+
+    function getHeapMB() {
+      if (window.performance && window.performance.memory) {
+        return +(window.performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2);
+      }
+      return null;
+    }
+
+    async function runStressTests() {
+      outputEl.textContent = "=== Starting Lightweight Charts Unmount & Memory Stress Test ===";
+      const results = window.__TEST_RESULTS__;
+      const initialHeap = getHeapMB();
+      results.memory.initialHeapMB = initialHeap;
+      log(`Initial Heap: ${initialHeap !== null ? initialHeap + ' MB' : 'N/A'}`);
+
+      // -----------------------------------------------------------------------
+      // Test 1: Single Mount & DOM Canvas Element Inspection
+      // -----------------------------------------------------------------------
+      log("\n--- Test 1: Chart Creation & Canvas Context Allocation ---");
+      const chart1 = LightweightCharts.createChart(container, {
+        width: 800,
+        height: 380,
+        layout: { background: { color: "transparent" }, textColor: "#94a3b8" },
+      });
+      const pSeries = chart1.addLineSeries({ color: "#38bdf8" });
+      const tSeries = chart1.addLineSeries({ color: "#10b981" });
+      const sSeries = chart1.addLineSeries({ color: "#f43f5e" });
+
+      const data = [];
+      const baseTime = 1700000000;
+      for (let i = 0; i < 500; i++) {
+        data.push({ time: baseTime + i * 60, value: 100 + Math.sin(i * 0.1) * 10 });
+      }
+      pSeries.setData(data);
+      tSeries.setData(data.map(d => ({ time: d.time, value: 115 })));
+      sSeries.setData(data.map(d => ({ time: d.time, value: 90 })));
+
+      const canvases = container.querySelectorAll("canvas");
+      const canvasCount = canvases.length;
+      log(`Canvases created by Lightweight Charts: ${canvasCount} (Expected: >= 3)`);
+      if (canvasCount < 3) {
+        throw new Error(`FAIL: Expected at least 3 canvases, got ${canvasCount}`);
+      }
+      results.tests.push({ name: "ChartMountCanvases", pass: true, canvasCount });
+
+      // -----------------------------------------------------------------------
+      // Test 2: Unmount via chart.remove() & Verification of Clean DOM Detachment
+      // -----------------------------------------------------------------------
+      log("\n--- Test 2: chart.remove() Unmounting & Detachment ---");
+      chart1.remove();
+      const canvasesAfterRemove = container.querySelectorAll("canvas");
+      const childrenAfterRemove = container.children.length;
+      log(`Canvases remaining after chart.remove(): ${canvasesAfterRemove.length} (Expected: 0)`);
+      log(`Child elements remaining in container: ${childrenAfterRemove} (Expected: 0)`);
+
+      if (canvasesAfterRemove.length !== 0 || childrenAfterRemove !== 0) {
+        throw new Error(`FAIL: Elements retained in container after chart.remove()!`);
+      }
+      results.tests.push({ name: "ChartUnmountCleanDOM", pass: true });
+      log("  [PASS] All canvas elements and container nodes cleanly removed.");
+
+      // -----------------------------------------------------------------------
+      // Test 3: Rapid Asset Switching Stress Test (250 Mount/Unmount Cycles)
+      // -----------------------------------------------------------------------
+      log("\n--- Test 3: 250 Rapid Mount/Unmount Cycles (Simulating Ticker Toggling) ---");
+      const cycles = 250;
+      const tStart = performance.now();
+
+      for (let c = 0; c < cycles; c++) {
+        const cChart = LightweightCharts.createChart(container, {
+          width: 800,
+          height: 380,
+        });
+        const line = cChart.addLineSeries();
+        line.setData([
+          { time: baseTime, value: 100 + c },
+          { time: baseTime + 60, value: 105 + c },
+        ]);
+
+        // Immediate unmount simulating rapid ticker switching
+        cChart.remove();
+
+        if (container.children.length !== 0) {
+          throw new Error(`FAIL on cycle ${c}: container not clean after chart.remove()`);
+        }
+
+        if ((c + 1) % 50 === 0) {
+          const curHeap = getHeapMB();
+          log(`  Completed cycle ${c + 1}/${cycles} | Container children: 0 | Heap: ${curHeap} MB`);
+        }
+      }
+
+      const tEnd = performance.now();
+      const dur = tEnd - tStart;
+      log(`250 mount/unmount cycles finished in ${dur.toFixed(1)} ms (${(dur / cycles).toFixed(2)} ms/cycle)`);
+
+      const finalHeap = getHeapMB();
+      results.memory.finalHeapMB = finalHeap;
+      results.memory.heapGrowthMB = finalHeap !== null && initialHeap !== null ? +(finalHeap - initialHeap).toFixed(2) : 0;
+      log(`Final Heap: ${finalHeap} MB (Net Growth: ${results.memory.heapGrowthMB} MB)`);
+
+      if (finalHeap !== null && finalHeap > 300) {
+        throw new Error(`FAIL: Final heap ${finalHeap} MB exceeded 300 MB budget!`);
+      }
+      results.tests.push({
+        name: "250RapidSwitchCycles",
+        pass: true,
+        durationMs: dur,
+        finalHeapMB: finalHeap,
+        heapGrowthMB: results.memory.heapGrowthMB,
+      });
+      log("  [PASS] 250 rapid unmount cycles verified with zero DOM leaks and bounded memory.");
+
+      // -----------------------------------------------------------------------
+      // Test 4: Comparison Against Negative Control (Uncleaned Canvases)
+      // -----------------------------------------------------------------------
+      log("\n--- Test 4: Negative Control Proof (What happens if chart.remove() is NOT called) ---");
+      const leakContainer = document.createElement("div");
+      document.body.appendChild(leakContainer);
+
+      for (let leak = 0; leak < 5; leak++) {
+        const leakedChart = LightweightCharts.createChart(leakContainer, { width: 400, height: 200 });
+        // Deliberately NOT calling leakedChart.remove()
+      }
+      const leakedCanvases = leakContainer.querySelectorAll("canvas").length;
+      log(`Negative control: 5 uncleaned charts created ${leakedCanvases} leaked canvas elements in DOM!`);
+      if (leakedCanvases <= 5) {
+        throw new Error("FAIL: Negative control did not accumulate leaked canvases");
+      }
+      // Clean up negative control container
+      document.body.removeChild(leakContainer);
+      log("  [PASS] Confirmed that omitting chart.remove() causes severe canvas element accumulation.");
+
+      results.status = "SUCCESS";
+      log("\n================================================================================");
+      log("ALL LIGHTWEIGHT CHARTS LIFECYCLE TESTS PASSED (100% GREEN)");
+      log("================================================================================");
+    }
+
+    window.addEventListener("load", () => {
+      runStressTests().catch(err => {
+        window.__TEST_RESULTS__.status = "FAILED";
+        window.__TEST_RESULTS__.error = err.message;
+        log("\n[ERROR] " + err.message);
+      });
+    });
+  </script>
+</body>
+</html>

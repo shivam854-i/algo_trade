@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SYNAPSE-TITAN | Institutional Autonomous Trading Terminal</title>
+  
+  <!-- Tailwind CSS & Chart.js CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            canvas: '#060911',
+            panel: '#0c1220',
+            elevated: '#111a2e',
+            subtle: '#18243c',
+            borderLight: 'rgba(148, 163, 184, 0.12)',
+            borderHighlight: 'rgba(56, 189, 248, 0.25)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      background-color: #060911;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      letter-spacing: -0.011em;
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: -0.02em;
+    }
+    .card-terminal {
+      background: linear-gradient(180deg, rgba(14, 21, 37, 0.88) 0%, rgba(9, 14, 26, 0.94) 100%);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 14px;
+      box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card-terminal:hover {
+      border-color: rgba(148, 163, 184, 0.22);
+    }
+    .card-header-term {
+      border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+      padding: 12px 18px;
+    }
+    .glow-cyan {
+      box-shadow: 0 0 18px -2px rgba(6, 182, 212, 0.35);
+    }
+    .glow-emerald {
+      box-shadow: 0 0 18px -2px rgba(16, 185, 129, 0.35);
+    }
+    .glow-rose {
+      box-shadow: 0 0 18px -2px rgba(244, 63, 94, 0.35);
+    }
+    .glow-amber {
+      box-shadow: 0 0 18px -2px rgba(245, 158, 11, 0.35);
+    }
+
+    @keyframes pulse-dot-emerald {
+      0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6); }
+      50% { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    }
+    @keyframes pulse-dot-amber {
+      0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); }
+      50% { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+    }
+    .pulse-emerald {
+      animation: pulse-dot-emerald 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    .pulse-amber {
+      animation: pulse-dot-amber 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+
+    /* Custom sleek scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(6, 9, 17, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.7);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(71, 85, 105, 0.9);
+    }
+
+    /* Tooltip styling */
+    .tooltip-wrap {
+      position: relative;
+    }
+    .tooltip-wrap .tooltip-box {
+      visibility: hidden;
+      opacity: 0;
+      position: absolute;
+      z-index: 50;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    .tooltip-wrap:hover .tooltip-box {
+      visibility: visible;
+      opacity: 1;
+      transform: translateX(-50%) translateY(-2px);
+    }
+
+    /* Interactive button press */
+    button:active {
+      transform: scale(0.98);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-canvas text-slate-200">
+
+  <!-- ========================================================================= -->
+  <!-- 1. TOP NAVIGATION & LIVE BOT STATUS BAR                                  -->
+  <!-- ========================================================================= -->
+  <header class="bg-[#080d19]/90 border-b border-slate-800/80 sticky top-0 z-40 backdrop-blur-md px-4 lg:px-6 py-2.5">
+    <div class="max-w-[1720px] mx-auto flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Brand, GPU Runtime & Unmistakable Bot Status Indicator -->
+      <div class="flex items-center gap-3.5 flex-wrap">
+        <!-- Logo -->
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold shadow-sm shadow-emerald-950">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-extrabold text-[15px] tracking-tight text-white flex items-center gap-1.5">
+                SYNAPSE<span class="text-cyan-400">TITAN</span>
+              </span>
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 uppercase tracking-wider">
+                v2.0 Pro
+              </span>
+            </div>
+            <div id="gpu-badge" class="text-[10px] text-slate-400 mono flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              NVIDIA RTX 4060 • CUDA 12.6 • BF16
+            </div>
+          </div>
+        </div>
+
+        <!-- UNMISTAKABLE BOT RUNNING STATUS BADGE -->
+        <div id="bot-status-container" class="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/35 transition-all duration-300">
+          <span id="bot-status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-emerald"></span>
+          <span id="bot-status-text" class="text-xs font-bold tracking-wide text-emerald-300">
+            BOT RUNNING — AUTO-TRADING 6 ASSETS
+          </span>
+          <span id="bot-tick-badge" class="text-[11px] mono text-slate-400 border-l border-slate-700/80 pl-2">
+            Tick #0 • --:--:--
+          </span>
+        </div>
+      </div>
+
+      <!-- CENTER: MARKET HOURS MODE TOGGLE BUTTON (STRICT REAL HOURS vs 24/7 SANDBOX) -->
+      <div class="flex items-center gap-2">
+        <div class="tooltip-wrap">
+          <button id="btn-toggle-hours" onclick="toggleMarketHours()" class="px-3.5 py-1.5 rounded-xl font-medium text-xs flex items-center gap-2.5 border transition-all duration-200 bg-slate-900/90 border-slate-700/80 text-slate-200 hover:border-slate-600 shadow-sm">
+            <span id="hours-icon" class="text-sm">🕒</span>
+            <div class="text-left">
+              <div class="flex items-center gap-1.5">
+                <span id="hours-title" class="font-bold text-xs text-white">Strict Exchange Hours</span>
+                <span id="hours-pill" class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">Real Clocks</span>
+              </div>
+              <span id="hours-desc" class="text-[10px] text-slate-400 block -mt-0.5">Closed exchanges (NSE / NYSE) frozen</span>
+            </div>
+            <svg class="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4"/>
+            </svg>
+          </button>
+          <div class="tooltip-box p-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-200 text-xs shadow-2xl min-w-[300px]">
+            <div class="font-bold text-cyan-300 mb-1 flex items-center gap-1.5">
+              <span>⚡ Real-World vs Sandbox Mode</span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-relaxed">
+              <b class="text-white">Strict Mode:</b> Indian stocks (RELIANCE.NS) only trade 09:15–15:30 IST; US tech (NVDA) 09:30–16:00 EST. Orders outside hours are rejected/queued.<br/>
+              <b class="text-cyan-300">24/7 Sandbox:</b> Simulates live price movement & order fills for all assets anytime 24/7!
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: PRIMARY BOT CONTROLS & SIMULATION TOOLS -->
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <!-- Start / Pause Bot -->
+        <button id="btn-toggle-bot" onclick="toggleBot()" class="px-3.5 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition">
+          <svg class="w-3.5 h-3.5 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/>
+          </svg>
+          <span id="btn-toggle-bot-text">Pause Bot</span>
+        </button>
+
+        <!-- +1 Tick -->
+        <button onclick="stepTick(null)" title="Advance 1 live market tick" class="px-3 py-1.5 rounded-xl font-medium text-xs bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 border border-slate-700 transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+          <span>+1 Tick</span>
+        </button>
+
+        <!-- +1.2% Rally -->
+        <button onclick="stepTick(1.2)" title="Inject +1.2% market-wide bull shock" class="px-2.5 py-1.5 rounded-xl font-medium text-xs bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/60 transition flex items-center gap-1">
+          <svg class="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+          </svg>
+          <span>+1.2% Rally</span>
+        </button>
+
+        <!-- -1.2% Drop -->
+        <button onclick="stepTick(-1.2)" title="Inject -1.2% market-wide bear shock" class="px-2.5 py-1.5 rounded-xl font-medium text-xs bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/60 transition flex items-center gap-1">
+          <svg class="w-3 h-3 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+          </svg>
+          <span>-1.2% Drop</span>
+        </button>
+
+        <!-- Flatten / Liquidate -->
+        <button onclick="flattenAll()" title="Liquidate all open simulated positions to cash" class="px-3 py-1.5 rounded-xl font-medium text-xs bg-slate-900 hover:bg-rose-950/70 text-slate-300 hover:text-rose-200 border border-slate-700/80 hover:border-rose-700/60 transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+          <span>Liquidate</span>
+        </button>
+
+        <!-- Reset $100K -->
+        <button onclick="resetAccount()" title="Reset account balance to $100,000.00" class="px-2.5 py-1.5 rounded-xl font-medium text-xs bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span>Reset</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Notification Banner / Toast Alert Container -->
+  <div id="toast-container" class="fixed top-16 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- ========================================================================= -->
+  <!-- 2. MULTI-ASSET TARGET SELECTOR & CUSTOM SYMBOL BUILDER COMMAND BAR         -->
+  <!-- ========================================================================= -->
+  <section class="max-w-[1720px] w-full mx-auto px-4 lg:px-6 pt-4 pb-1">
+    <div class="card-terminal p-3.5">
+      <!-- Header row with Presets and Count -->
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-2.5 border-b border-slate-800/80">
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-white flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" stroke-width="2"/>
+                <circle cx="12" cy="12" r="6" stroke-width="2"/>
+                <circle cx="12" cy="12" r="2" fill="currentColor"/>
+              </svg>
+              Bot Target Assets & Basket Selector
+            </span>
+            <span id="armed-count-badge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 mono">
+              6 Armed / 6 Total
+            </span>
+          </div>
+
+          <!-- Quick Preset Buttons -->
+          <div class="flex items-center gap-1.5 flex-wrap text-xs">
+            <span class="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mr-1">Presets:</span>
+            <button onclick="applyPreset('ALL_LIVE')" title="Arm all currently open/tradable assets" class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> 24/7 Live Only
+            </button>
+            <button onclick="applyPreset('CRYPTO')" title="Arm major cryptocurrencies (BTC, ETH, SOL, XRP, DOGE)" class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition">
+              🪙 Crypto Majors
+            </button>
+            <button onclick="applyPreset('COMMODITIES_FX')" title="Arm Gold, Oil, Silver, and major Forex pairs" class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition">
+              🥇 Gold & FX
+            </button>
+            <button onclick="applyPreset('INDIAN_NSE')" title="Arm Reliance, TCS, HDFC Bank, Infosys, Tata Motors" class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition">
+              🇮🇳 Indian NSE
+            </button>
+            <button onclick="applyPreset('US_EQUITIES')" title="Arm Nvidia, Apple, Tesla, Microsoft, AMD" class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 transition">
+              🇺🇸 US Tech
+            </button>
+            <button onclick="applyPreset('ALL')" class="px-2 py-1 rounded-lg bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/50 transition">
+              Select All
+            </button>
+            <button onclick="applyPreset('NONE')" class="px-2 py-1 rounded-lg bg-slate-800/50 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/50 transition">
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Symbol Input Field & Quick Chips -->
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <div class="relative flex-1 sm:w-72">
+            <input id="input-custom-ticker" type="text" placeholder="Add symbol(s): SOL-USD, TCS.NS, AAPL..."
+              onkeydown="if(event.key==='Enter') addCustomTicker()"
+              class="w-full bg-[#0a0f1d] border border-slate-700/90 focus:border-cyan-400 focus:outline-none rounded-xl px-3 py-1.5 text-xs text-white mono uppercase placeholder:normal-case placeholder:text-slate-500 transition" />
+          </div>
+          <button onclick="addCustomTicker()" id="btn-add-ticker" class="px-3.5 py-1.5 rounded-xl font-semibold text-xs bg-cyan-600 hover:bg-cyan-500 text-white transition flex items-center gap-1 shadow-sm whitespace-nowrap">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+            </svg>
+            <span>Add Asset</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Add Suggestion Chips -->
+      <div class="flex items-center gap-1.5 text-[11px] mb-2.5 flex-wrap text-slate-400">
+        <span class="text-[10px] text-slate-500 uppercase font-semibold">Quick Add:</span>
+        <button onclick="quickAddSymbol('SOL-USD')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ SOL-USD</button>
+        <button onclick="quickAddSymbol('TATAMOTORS.NS')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ TATAMOTORS.NS</button>
+        <button onclick="quickAddSymbol('TCS.NS')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ TCS.NS</button>
+        <button onclick="quickAddSymbol('AAPL')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ AAPL</button>
+        <button onclick="quickAddSymbol('CL=F')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ CL=F (Crude)</button>
+        <button onclick="quickAddSymbol('DOGE-USD')" class="px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-700 text-cyan-300 mono transition border border-slate-700/50">+ DOGE-USD</button>
+      </div>
+
+      <!-- Asset Pills Grid: Each shows Checkmark when Armed, Exchange Status Badge, and Price -->
+      <div id="armed-pills-container" class="flex items-center gap-2 flex-wrap min-h-[38px]">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================= -->
+  <!-- 3. MAIN WORKSPACE                                                        -->
+  <!-- ========================================================================= -->
+  <main class="max-w-[1720px] w-full mx-auto px-4 lg:px-6 py-4 flex-1 flex flex-col gap-4">
+
+    <!-- ROW 1: 4 INSTITUTIONAL KPI SUMMARY CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Card 1: Simulated Portfolio Balance -->
+      <div class="card-terminal p-4 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Simulated Portfolio Equity</span>
+          <span class="text-[10px] mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700/60">Base: $100,000</span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-3">
+          <span id="kpi-equity" class="text-2xl lg:text-3xl font-extrabold mono text-white tracking-tight">$100,000.00</span>
+          <span id="kpi-return-badge" class="text-xs font-bold mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">+0.00%</span>
+        </div>
+        <div class="mt-2 text-xs text-slate-400 flex justify-between mono pt-2 border-t border-slate-800/60">
+          <span>Available Cash: <b id="kpi-cash" class="text-slate-200 font-semibold">$100,000</b></span>
+          <span>Allocated: <b id="kpi-invested" class="text-slate-200 font-semibold">$0</b></span>
+        </div>
+      </div>
+
+      <!-- Card 2: Bot vs. Market Movement -->
+      <div class="card-terminal p-4 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bot vs. Market Movement</span>
+          <span class="text-[10px] mono font-semibold text-cyan-400 px-2 py-0.5 rounded-md bg-cyan-950/40 border border-cyan-800/50">Equal-Weight Bench</span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-3">
+          <div>
+            <span class="text-[11px] text-slate-400 block -mb-0.5">Bot Return</span>
+            <span id="kpi-bot-ret" class="text-xl lg:text-2xl font-extrabold mono text-emerald-400">+0.00%</span>
+          </div>
+          <span class="text-slate-600 text-lg font-light">vs</span>
+          <div>
+            <span class="text-[11px] text-slate-400 block -mb-0.5">Market Move</span>
+            <span id="kpi-mkt-ret" class="text-xl lg:text-2xl font-extrabold mono text-slate-300">+0.00%</span>
+          </div>
+        </div>
+        <div class="mt-2 text-xs text-slate-400 flex justify-between mono pt-2 border-t border-slate-800/60">
+          <span>Net Bot Alpha:</span>
+          <b id="kpi-alpha" class="text-cyan-400 font-bold">+0.00% Outperformance</b>
+        </div>
+      </div>
+
+      <!-- Card 3: Active Open Positions & Live MTM -->
+      <div class="card-terminal p-4 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Open Positions (Live MTM)</span>
+          <span id="kpi-open-count" class="text-[10px] mono px-2 py-0.5 rounded-md bg-blue-500/15 text-blue-300 border border-blue-500/30 font-semibold">0 Open</span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-3">
+          <span id="kpi-unrealized" class="text-2xl lg:text-3xl font-extrabold mono text-slate-300 tracking-tight">$0.00</span>
+          <span id="kpi-unrealized-pct" class="text-xs font-bold mono text-slate-400">(0.00%)</span>
+        </div>
+        <div class="mt-2 text-xs text-slate-400 flex justify-between pt-2 border-t border-slate-800/60">
+          <span>Auto-Exit Triple-Barriers:</span>
+          <span class="text-emerald-400 font-semibold flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Active Guard
+          </span>
+        </div>
+      </div>
+
+      <!-- Card 4: Realized Profit & Algorithmic Audit -->
+      <div class="card-terminal p-4 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Audited Realized PnL</span>
+          <span id="kpi-closed-count" class="text-[10px] mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700/60">0 Trades</span>
+        </div>
+        <div class="mt-2.5 flex items-baseline gap-3">
+          <span id="kpi-realized" class="text-2xl lg:text-3xl font-extrabold mono text-emerald-400 tracking-tight">$0.00</span>
+          <span id="kpi-winrate" class="text-xs font-bold mono px-2 py-0.5 rounded-md bg-slate-800/80 text-slate-300">Win: --%</span>
+        </div>
+        <div class="mt-2 text-xs text-slate-400 flex justify-between mono pt-2 border-t border-slate-800/60">
+          <span>Profit Factor: <b id="kpi-pf" class="text-slate-200">--</b></span>
+          <span>Friction Deducted: <b id="kpi-friction" class="text-slate-300">$0.00</b></span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ROW 2: TWO DUAL SIDE-BY-SIDE REAL-TIME CHARTS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      <!-- CHART 1: BOT PERFORMANCE VS. MARKET MOVEMENT (%) -->
+      <div class="card-terminal flex flex-col">
+        <div class="card-header-term flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 class="text-sm font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+              </svg>
+              Bot Portfolio Return vs. Market Movement
+            </h2>
+            <p class="text-[11px] text-slate-400">Comparing Bot Net Profit (%) against Equal-Weight Benchmark Movement (%)</p>
+          </div>
+          <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+            <button id="btn-mode-pct" onclick="setPerfChartMode('pct')" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 transition">
+              % Return vs Market
+            </button>
+            <button id="btn-mode-usd" onclick="setPerfChartMode('usd')" class="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition">
+              $ Dollar Equity
+            </button>
+          </div>
+        </div>
+        <div class="p-4 flex-1 min-h-[310px] relative">
+          <canvas id="perfChart"></canvas>
+        </div>
+      </div>
+
+      <!-- CHART 2: SELECTED ASSET LIVE PRICE & BOT TRIPLE-BARRIERS -->
+      <div class="card-terminal flex flex-col">
+        <div class="card-header-term flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Asset Focus:</span>
+              <span id="selected-asset-title" class="text-sm font-extrabold mono text-cyan-400">BTC-USD</span>
+              <span id="selected-asset-exchange-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                🟢 LIVE • CRYPTO 24/7
+              </span>
+              <span id="selected-asset-signal" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
+                --
+              </span>
+            </div>
+            <p id="selected-asset-sub" class="text-[11px] text-slate-400 mono mt-0.5">
+              Price: -- | Target: -- | Stop: --
+            </p>
+          </div>
+          <!-- Quick Selector Dropdown for Chart Asset -->
+          <div class="flex items-center gap-1.5">
+            <select id="select-active-asset" onchange="selectAsset(this.value)" class="bg-[#0a0f1d] border border-slate-700/80 rounded-xl px-2.5 py-1 text-xs text-white mono focus:border-cyan-400 focus:outline-none">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Chart Container with Exchange Closed Warning Banner (Conditional) -->
+        <div class="relative p-4 flex-1 min-h-[260px]">
+          <!-- Conditional Banner for Closed Exchanges in Strict Mode -->
+          <div id="chart-closed-banner" class="hidden mb-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-xs">
+            <div class="flex items-center gap-2 text-amber-300">
+              <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              <span id="chart-closed-text">
+                🕒 Exchange is closed in Strict Mode. Orders are queued.
+              </span>
+            </div>
+            <button onclick="toggleMarketHours()" class="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-[11px] whitespace-nowrap shadow-sm transition">
+              ⚡ Switch to 24/7 Sandbox
+            </button>
+          </div>
+
+          <canvas id="assetChart"></canvas>
+        </div>
+
+        <!-- Quick 1-Click Manual Order Execution Strip -->
+        <div class="px-4 py-2.5 bg-slate-900/60 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2 rounded-b-2xl">
+          <div class="text-xs text-slate-400 flex items-center gap-3 mono flex-wrap">
+            <span>Regime: <b id="quick-regime" class="text-slate-200">--</b></span>
+            <span>AI Prob: <b id="quick-conf" class="text-cyan-400">--%</b></span>
+            <span>Slip+Fee: <b id="quick-fee" class="text-slate-300">-- bps</b></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="manual-alloc" class="bg-slate-800 border border-slate-700 rounded-xl px-2 py-1 text-xs text-white mono focus:outline-none">
+              <option value="5">Size: 5% (~$5k)</option>
+              <option value="10" selected>Size: 10% (~$10k)</option>
+              <option value="15">Size: 15% (~$15k)</option>
+              <option value="20">Size: 20% (~$20k Cap)</option>
+            </select>
+            <button onclick="placeManualOrder('LONG')" class="px-3 py-1 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition flex items-center gap-1 shadow-sm">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"/>
+              </svg>
+              <span>+ Buy LONG</span>
+            </button>
+            <button onclick="placeManualOrder('SHORT')" class="px-3 py-1 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition flex items-center gap-1 shadow-sm">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+              </svg>
+              <span>- Sell SHORT</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ROW 3: 3-COLUMN LIVE TRADING WORKSPACE -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+      <!-- COL 1 (5 Cols): LIVE MARKET WATCHLIST & EXCHANGE TELEMETRY -->
+      <div class="card-terminal lg:col-span-5 flex flex-col">
+        <div class="card-header-term flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+              Market Watchlist & Sessions
+            </h3>
+            <span id="watchlist-total-count" class="text-[10px] mono text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">6 Assets</span>
+          </div>
+          <span class="text-[11px] text-slate-400">Click row to inspect chart</span>
+        </div>
+        <div class="divide-y divide-slate-800/60 overflow-y-auto max-h-[380px]" id="watchlist-container">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- COL 2 (4 Cols): ACTIVE OPEN POSITIONS (SIMULATED MONEY) -->
+      <div class="card-terminal lg:col-span-4 flex flex-col">
+        <div class="card-header-term flex items-center justify-between">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Active Simulated Positions
+          </h3>
+          <span id="open-pos-summary" class="text-[10px] mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">0 Open</span>
+        </div>
+        <div class="p-3 overflow-y-auto flex-1 max-h-[380px]" id="open-positions-container">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- COL 3 (3 Cols): LIVE BOT ACTIVITY LOG & AUDIT -->
+      <div class="card-terminal lg:col-span-3 flex flex-col">
+        <div class="card-header-term flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <button id="tab-btn-log" onclick="switchRightTab('log')" class="text-xs font-bold text-cyan-400 border-b-2 border-cyan-400 pb-0.5">
+              ⚡ Bot Live Log
+            </button>
+            <button id="tab-btn-trades" onclick="switchRightTab('trades')" class="text-xs font-medium text-slate-400 hover:text-white pb-0.5">
+              📜 Closed Trades
+            </button>
+            <button id="tab-btn-clocks" onclick="switchRightTab('clocks')" class="text-xs font-medium text-slate-400 hover:text-white pb-0.5">
+              🕒 Exchanges
+            </button>
+          </div>
+          <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-emerald"></span>
+        </div>
+
+        <!-- 1. Activity Log View -->
+        <div id="right-view-log" class="p-3 overflow-y-auto space-y-2 max-h-[380px] text-xs mono">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- 2. Closed Trades View -->
+        <div id="right-view-trades" class="p-3 overflow-y-auto space-y-2 max-h-[380px] hidden">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- 3. Exchange Clocks View -->
+        <div id="right-view-clocks" class="p-3 overflow-y-auto space-y-2.5 max-h-[380px] hidden text-xs">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- 4. CORE CONTROLLER SCRIPT (JS)                                            -->
+  <!-- ========================================================================= -->
+  <script>
+    let currentState = null;
+    let selectedTicker = "BTC-USD";
+    let perfChartMode = "pct"; // 'pct' or 'usd'
+    let perfChart = null;
+    let assetChart = null;
+    let pollTimer = null;
+    let currentRightTab = "log";
+
+    function fmtMoney(val, decimals = 2) {
+      const n = Number(val || 0);
+      return "$" + n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function fmtPrice(val, decimals = 2, ticker = "") {
+      const n = Number(val || 0);
+      const prefix = ticker.includes("=X") ? "" : (ticker.endsWith(".NS") ? "₹" : "$");
+      return prefix + n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function showToast(msg, type = "info") {
+      const container = document.getElementById("toast-container");
+      if (!container) return;
+      const toast = document.createElement("div");
+      toast.className = `p-3 rounded-xl border text-xs shadow-2xl backdrop-blur-md pointer-events-auto transition-all duration-300 max-w-sm flex items-start gap-2.5 ${
+        type === "error"
+          ? "bg-rose-950/90 border-rose-700/80 text-rose-200"
+          : type === "warning"
+          ? "bg-amber-950/90 border-amber-700/80 text-amber-200"
+          : "bg-slate-900/90 border-slate-700 text-slate-200"
+      }`;
+
+      toast.innerHTML = `
+        <div class="flex-1">${msg}</div>
+        <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white font-bold ml-1">✕</button>
+      `;
+
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // ----------------- Chart Initialization ----------------- //
+    function initCharts() {
+      // 1. Performance Chart
+      const ctxPerf = document.getElementById("perfChart").getContext("2d");
+      
+      const gradBot = ctxPerf.createLinearGradient(0, 0, 0, 300);
+      gradBot.addColorStop(0, "rgba(16, 185, 129, 0.28)");
+      gradBot.addColorStop(1, "rgba(16, 185, 129, 0.00)");
+
+      perfChart = new Chart(ctxPerf, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Bot Portfolio Return (%)",
+              data: [],
+              borderColor: "#10b981",
+              backgroundColor: gradBot,
+              borderWidth: 2.5,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+              pointHoverRadius: 5,
+            },
+            {
+              label: "Market Movement Benchmark (%)",
+              data: [],
+              borderColor: "#94a3b8",
+              borderDash: [5, 4],
+              borderWidth: 1.8,
+              fill: false,
+              tension: 0.3,
+              pointRadius: 0,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 250 },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              labels: { color: "#cbd5e1", font: { family: "Inter", size: 11 } }
+            },
+            tooltip: {
+              backgroundColor: "rgba(11, 17, 32, 0.95)",
+              borderColor: "rgba(148, 163, 184, 0.2)",
+              borderWidth: 1,
+              titleFont: { family: "JetBrains Mono", size: 11 },
+              bodyFont: { family: "JetBrains Mono", size: 11 },
+              padding: 10,
+              displayColors: true
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: "#64748b", maxTicksLimit: 8, font: { family: "JetBrains Mono", size: 10 } },
+              grid: { color: "rgba(30, 41, 59, 0.4)" }
+            },
+            y: {
+              ticks: {
+                color: "#94a3b8",
+                font: { family: "JetBrains Mono", size: 11 },
+                callback: function(v) {
+                  return perfChartMode === "pct" ? (v >= 0 ? "+" : "") + v.toFixed(2) + "%" : "$" + v.toLocaleString();
+                }
+              },
+              grid: { color: "rgba(30, 41, 59, 0.4)" }
+            }
+          }
+        }
+      });
+
+      // 2. Asset Chart
+      const ctxAsset = document.getElementById("assetChart").getContext("2d");
+      const gradAsset = ctxAsset.createLinearGradient(0, 0, 0, 260);
+      gradAsset.addColorStop(0, "rgba(56, 189, 248, 0.22)");
+      gradAsset.addColorStop(1, "rgba(56, 189, 248, 0.00)");
+
+      assetChart = new Chart(ctxAsset, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: "Market Price",
+              data: [],
+              borderColor: "#38bdf8",
+              backgroundColor: gradAsset,
+              borderWidth: 2.2,
+              fill: true,
+              tension: 0.25,
+              pointRadius: 2,
+              pointHoverRadius: 5,
+            },
+            {
+              label: "Profit Target",
+              data: [],
+              borderColor: "#10b981",
+              borderDash: [6, 4],
+              borderWidth: 1.8,
+              pointRadius: 0,
+              fill: false,
+            },
+            {
+              label: "Stop Loss",
+              data: [],
+              borderColor: "#f43f5e",
+              borderDash: [6, 4],
+              borderWidth: 1.8,
+              pointRadius: 0,
+              fill: false,
+            },
+            {
+              label: "Entry Price",
+              data: [],
+              borderColor: "#f59e0b",
+              borderDash: [3, 3],
+              borderWidth: 1.5,
+              pointRadius: 0,
+              fill: false,
+              hidden: true,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 250 },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              labels: { color: "#cbd5e1", font: { family: "Inter", size: 11 } }
+            },
+            tooltip: {
+              backgroundColor: "rgba(11, 17, 32, 0.95)",
+              borderColor: "rgba(148, 163, 184, 0.2)",
+              borderWidth: 1,
+              titleFont: { family: "JetBrains Mono", size: 11 },
+              bodyFont: { family: "JetBrains Mono", size: 11 },
+              padding: 10,
+            }
+          },
+          scales: {
+            x: {
+              ticks: { color: "#64748b", maxTicksLimit: 8, font: { family: "JetBrains Mono", size: 10 } },
+              grid: { color: "rgba(30, 41, 59, 0.4)" }
+            },
+            y: {
+              ticks: { color: "#94a3b8", font: { family: "JetBrains Mono", size: 11 } },
+              grid: { color: "rgba(30, 41, 59, 0.4)" }
+            }
+          }
+        }
+      });
+    }
+
+    function setPerfChartMode(mode) {
+      perfChartMode = mode;
+      const btnPct = document.getElementById("btn-mode-pct");
+      const btnUsd = document.getElementById("btn-mode-usd");
+      if (mode === "pct") {
+        btnPct.className = "px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 transition";
+        btnUsd.className = "px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition";
+      } else {
+        btnUsd.className = "px-2.5 py-1 rounded-lg text-xs font-semibold bg-cyan-500/20 text-cyan-300 transition";
+        btnPct.className = "px-2.5 py-1 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition";
+      }
+      if (currentState) renderCharts(currentState);
+    }
+
+    function switchRightTab(tab) {
+      currentRightTab = tab;
+      const logView = document.getElementById("right-view-log");
+      const tradesView = document.getElementById("right-view-trades");
+      const clocksView = document.getElementById("right-view-clocks");
+      
+      const btnLog = document.getElementById("tab-btn-log");
+      const btnTrades = document.getElementById("tab-btn-trades");
+      const btnClocks = document.getElementById("tab-btn-clocks");
+
+      logView.classList.toggle("hidden", tab !== "log");
+      tradesView.classList.toggle("hidden", tab !== "trades");
+      clocksView.classList.toggle("hidden", tab !== "clocks");
+
+      btnLog.className = tab === "log"
+        ? "text-xs font-bold text-cyan-400 border-b-2 border-cyan-400 pb-0.5"
+        : "text-xs font-medium text-slate-400 hover:text-white pb-0.5";
+      btnTrades.className = tab === "trades"
+        ? "text-xs font-bold text-cyan-400 border-b-2 border-cyan-400 pb-0.5"
+        : "text-xs font-medium text-slate-400 hover:text-white pb-0.5";
+      btnClocks.className = tab === "clocks"
+        ? "text-xs font-bold text-cyan-400 border-b-2 border-cyan-400 pb-0.5"
+        : "text-xs font-medium text-slate-400 hover:text-white pb-0.5";
+
+      if (currentState) renderRightColumn(currentState);
+    }
+
+    function selectAsset(ticker) {
+      selectedTicker = ticker;
+      if (currentState) {
+        renderCharts(currentState);
+        renderWatchlist(currentState);
+        renderArmedPills(currentState);
+      }
+    }
+
+    // ----------------- Rendering Views ----------------- //
+
+    function renderCharts(state) {
+      // 1. Performance Chart
+      const comp = state.comparison_series || [];
+      perfChart.data.labels = comp.map(p => p.time);
+      if (perfChartMode === "pct") {
+        perfChart.data.datasets[0].label = "Bot Portfolio Return (%)";
+        perfChart.data.datasets[0].data = comp.map(p => p.bot_return_pct);
+        perfChart.data.datasets[1].hidden = false;
+        perfChart.data.datasets[1].data = comp.map(p => p.market_return_pct);
+      } else {
+        perfChart.data.datasets[0].label = "Bot Simulated Equity ($)";
+        perfChart.data.datasets[0].data = comp.map(p => p.bot_equity);
+        perfChart.data.datasets[1].hidden = true;
+      }
+      perfChart.update("none");
+
+      // 2. Selected Asset Chart
+      const asset = (state.assets || {})[selectedTicker];
+      if (!asset) {
+        const firstTk = Object.keys(state.assets || {})[0];
+        if (firstTk) {
+          selectedTicker = firstTk;
+          renderCharts(state);
+        }
+        return;
+      }
+
+      document.getElementById("selected-asset-title").textContent = selectedTicker;
+      
+      // Update Exchange Session Badge on Chart Header
+      const exchBadge = document.getElementById("selected-asset-exchange-badge");
+      const enforce = state.bot_status?.enforce_market_hours;
+      if (asset.exchange_open) {
+        exchBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+        exchBadge.innerHTML = `🟢 LIVE • ${asset.exchange_name} (${asset.exchange_schedule})`;
+      } else if (!enforce) {
+        exchBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/40";
+        exchBadge.innerHTML = `🧪 SANDBOX LIVE • ${asset.exchange_name}`;
+      } else {
+        exchBadge.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/30";
+        exchBadge.innerHTML = `🔴 CLOSED • ${asset.exchange_name} (${asset.exchange_schedule})`;
+      }
+
+      // Signal Pill
+      const sigEl = document.getElementById("selected-asset-signal");
+      sigEl.textContent = asset.signal;
+      if (asset.signal.includes("BUY")) {
+        sigEl.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+      } else if (asset.signal.includes("SELL")) {
+        sigEl.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30";
+      } else {
+        sigEl.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300";
+      }
+
+      const moveSign = asset.move_pct >= 0 ? "+" : "";
+      document.getElementById("selected-asset-sub").textContent =
+        `Live: ${fmtPrice(asset.current_price, asset.decimals, selectedTicker)} (${moveSign}${asset.move_pct}%) • Target: ${fmtPrice(asset.target_price, asset.decimals, selectedTicker)} • Stop: ${fmtPrice(asset.stop_price, asset.decimals, selectedTicker)}`;
+
+      document.getElementById("quick-regime").textContent = asset.regime;
+      document.getElementById("quick-conf").textContent = asset.confidence_pct + "%";
+      document.getElementById("quick-fee").textContent = asset.friction_bps + " bps";
+
+      // Show/hide Closed Warning Banner
+      const closedBanner = document.getElementById("chart-closed-banner");
+      const closedText = document.getElementById("chart-closed-text");
+      if (!asset.exchange_open && enforce) {
+        closedBanner.classList.remove("hidden");
+        closedText.textContent = `🕒 ${asset.exchange_name} is Closed (${asset.exchange_reason || asset.exchange_schedule}). Orders are queued in Strict Mode.`;
+      } else {
+        closedBanner.classList.add("hidden");
+      }
+
+      // Update Chart Series
+      const pSeries = asset.price_series || [];
+      assetChart.data.labels = pSeries.map(x => x.time);
+      assetChart.data.datasets[0].label = `${selectedTicker} Price`;
+      assetChart.data.datasets[0].data = pSeries.map(x => x.price);
+      assetChart.data.datasets[1].data = pSeries.map(() => asset.target_price);
+      assetChart.data.datasets[2].data = pSeries.map(() => asset.stop_price);
+      
+      // If position is active, show entry price line
+      if (asset.has_open_position && asset.entry_price) {
+        assetChart.data.datasets[3].hidden = false;
+        assetChart.data.datasets[3].label = `Entry (${asset.entry_price})`;
+        assetChart.data.datasets[3].data = pSeries.map(() => asset.entry_price);
+      } else {
+        assetChart.data.datasets[3].hidden = true;
+      }
+
+      assetChart.update("none");
+
+      // Update Select Dropdown
+      const selectBox = document.getElementById("select-active-asset");
+      const tickers = Object.keys(state.assets || {});
+      selectBox.innerHTML = tickers.map(t => `<option value="${t}" ${t === selectedTicker ? "selected" : ""}>${t}</option>`).join("");
+    }
+
+    function renderArmedPills(state) {
+      const container = document.getElementById("armed-pills-container");
+      const assets = state.assets || {};
+      const armedSet = new Set(state.bot_status?.armed_tickers || []);
+      const enforce = state.bot_status?.enforce_market_hours;
+      
+      document.getElementById("armed-count-badge").textContent = `${armedSet.size} Armed / ${Object.keys(assets).length} In Watchlist`;
+
+      container.innerHTML = Object.keys(assets).map(tk => {
+        const item = assets[tk];
+        const isArmed = armedSet.has(tk);
+        const isSelected = tk === selectedTicker;
+        const isOpen = item.exchange_open;
+        const tradable = item.tradable_now;
+
+        // Exchange dot
+        let dotColor = "bg-emerald-400";
+        if (!isOpen && enforce) {
+          dotColor = "bg-rose-400";
+        } else if (!isOpen && !enforce) {
+          dotColor = "bg-cyan-400";
+        }
+
+        const borderClass = isSelected ? "ring-2 ring-cyan-400/80" : "";
+        const bgClass = isArmed
+          ? "bg-slate-900 border-cyan-500/50 text-white shadow-sm"
+          : "bg-slate-900/40 border-slate-800 text-slate-400 opacity-65 hover:opacity-100";
+
+        const checkIcon = isArmed
+          ? `<svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>`
+          : `<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>`;
+
+        return `
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs mono ${bgClass} ${borderClass} transition group cursor-pointer" onclick="toggleSingleAssetArm('${tk}')">
+            <span title="${isArmed ? 'Click to disarm from bot' : 'Click to arm for autonomous bot'}">${checkIcon}</span>
+            <span class="w-2 h-2 rounded-full ${dotColor}" title="${item.exchange_reason || item.exchange_schedule}"></span>
+            <button onclick="event.stopPropagation(); selectAsset('${tk}')" class="font-bold hover:text-cyan-300 ml-0.5">
+              ${tk}
+            </button>
+            <span class="text-[11px] text-slate-400 ml-1">
+              ${fmtPrice(item.current_price, item.decimals, tk)}
+            </span>
+            <span class="text-[10px] font-semibold ${item.move_pct >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+              ${item.move_pct >= 0 ? '+' : ''}${item.move_pct}%
+            </span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderWatchlist(state) {
+      const el = document.getElementById("watchlist-container");
+      const assets = state.assets || {};
+      const armedSet = new Set(state.bot_status?.armed_tickers || []);
+      const enforce = state.bot_status?.enforce_market_hours;
+
+      document.getElementById("watchlist-total-count").textContent = `${Object.keys(assets).length} Assets`;
+
+      el.innerHTML = Object.keys(assets).map(tk => {
+        const item = assets[tk];
+        const isArmed = armedSet.has(tk);
+        const isSelected = tk === selectedTicker;
+        const isOpen = item.exchange_open;
+        const isPos = item.move_pct >= 0;
+
+        // Exchange session badge
+        let exchPill = "";
+        if (isOpen) {
+          exchPill = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> LIVE
+          </span>`;
+        } else if (!enforce) {
+          exchPill = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/40" title="Simulating outside market hours">
+            <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> SANDBOX
+          </span>`;
+        } else {
+          exchPill = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30" title="${item.exchange_reason}">
+            <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span> CLOSED
+          </span>`;
+        }
+
+        // Signal badge
+        let sigClass = "text-slate-400 bg-slate-800";
+        if (item.signal.includes("BUY")) sigClass = "text-emerald-300 bg-emerald-500/20 border border-emerald-500/30";
+        if (item.signal.includes("SELL")) sigClass = "text-rose-300 bg-rose-500/20 border border-rose-500/30";
+
+        const bgSelected = isSelected ? "bg-cyan-950/30 border-l-2 border-cyan-400" : "hover:bg-slate-800/40";
+
+        return `
+          <div class="p-3 flex items-center justify-between gap-2 transition cursor-pointer ${bgSelected}" onclick="selectAsset('${tk}')">
+            <!-- Left: Arm Toggle + Ticker + Jurisdiction -->
+            <div class="flex items-center gap-2.5 min-w-[140px]">
+              <input type="checkbox" ${isArmed ? 'checked' : ''} onclick="event.stopPropagation(); toggleSingleAssetArm('${tk}')" title="Arm for autonomous bot trading" class="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-slate-700 cursor-pointer" />
+              <div>
+                <div class="font-extrabold text-xs mono text-white flex items-center gap-1.5">
+                  ${tk}
+                  ${exchPill}
+                </div>
+                <div class="text-[10px] text-slate-400 mono">
+                  ${item.exchange_name} • ${item.exchange_clock || item.exchange_schedule}
+                </div>
+              </div>
+            </div>
+
+            <!-- Middle: Price & Move -->
+            <div class="text-right min-w-[90px]">
+              <div class="font-bold text-xs mono text-white">
+                ${fmtPrice(item.current_price, item.decimals, tk)}
+              </div>
+              <div class="text-[10px] font-bold mono ${isPos ? 'text-emerald-400' : 'text-rose-400'}">
+                ${isPos ? '+' : ''}${item.move_pct}%
+              </div>
+            </div>
+
+            <!-- Right: AI Direction & Quick Trade -->
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold mono ${sigClass}">
+                ${item.signal} (${item.confidence_pct}%)
+              </span>
+              <div class="flex items-center gap-1">
+                <button onclick="event.stopPropagation(); quickOrder('${tk}', 'LONG')" title="Buy LONG" class="p-1 rounded bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white transition">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"/></svg>
+                </button>
+                <button onclick="event.stopPropagation(); quickOrder('${tk}', 'SHORT')" title="Sell SHORT" class="p-1 rounded bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white transition">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderOpenPositions(state) {
+      const container = document.getElementById("open-positions-container");
+      const positions = state.open_positions || [];
+      document.getElementById("open-pos-summary").textContent = `${positions.length} Active Positions`;
+
+      if (positions.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 px-4 flex flex-col items-center justify-center text-slate-500">
+            <svg class="w-8 h-8 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            <p class="text-xs font-medium">No open positions currently active.</p>
+            <p class="text-[11px] text-slate-600 mt-1">Bot will automatically enter trades on armed assets when AI criteria align.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = positions.map(p => {
+        const dec = p.ticker.includes("=X") ? 4 : 2;
+        const isPos = p.unrealized_pnl >= 0;
+        const pnlColor = isPos ? "text-emerald-400" : "text-rose-400";
+        const sideCls = p.direction === "LONG"
+          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+          : "bg-rose-500/15 text-rose-400 border-rose-500/30";
+
+        // Calculate visual progress bar between stop and target
+        const span = Math.abs(p.target_price - p.stop_price) || 1e-6;
+        const distFromStop = p.direction === "LONG"
+          ? (p.current_price - p.stop_price)
+          : (p.stop_price - p.current_price);
+        const pct = Math.max(5, Math.min(95, Math.round((distFromStop / span) * 100)));
+
+        return `
+          <div class="p-3 mb-2 rounded-xl bg-slate-900/80 border border-slate-800/80 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="font-extrabold text-sm mono text-white">${p.ticker}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${sideCls}">${p.direction}</span>
+                <span class="text-[11px] text-slate-400 mono">Size: $${p.allocated_capital.toLocaleString()}</span>
+              </div>
+              <div class="text-right">
+                <span class="font-bold text-xs mono ${pnlColor}">
+                  ${isPos ? '+' : ''}${fmtMoney(p.unrealized_pnl)}
+                </span>
+                <span class="text-[10px] font-bold mono ${pnlColor} ml-1">
+                  (${isPos ? '+' : ''}${p.unrealized_return_pct.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+
+            <!-- Price & Triple Barrier Range Bar -->
+            <div class="text-xs mono">
+              <div class="flex justify-between text-[10px] text-slate-400 mb-1">
+                <span class="text-rose-400 font-semibold">Stop: ${fmtPrice(p.stop_price, dec, p.ticker)}</span>
+                <span class="text-slate-300">Entry: ${fmtPrice(p.entry_price, dec, p.ticker)}</span>
+                <span class="text-emerald-400 font-semibold">Target: ${fmtPrice(p.target_price, dec, p.ticker)}</span>
+              </div>
+              <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                <div class="h-full ${isPos ? 'bg-emerald-400' : 'bg-amber-400'}" style="width: ${pct}%"></div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-1 border-t border-slate-800/50 text-[11px] text-slate-400">
+              <span>Current Price: <b class="text-white mono">${fmtPrice(p.current_price, dec, p.ticker)}</b></span>
+              <button onclick="closePosition(${p.id})" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white text-[10px] font-bold mono transition border border-slate-700">
+                Close Position
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderRightColumn(state) {
+      if (currentRightTab === "log") {
+        const logEl = document.getElementById("right-view-log");
+        const logs = state.activity_log || [];
+        logEl.innerHTML = logs.map(item => {
+          let badge = `<span class="text-cyan-400 font-bold">[BOT]</span>`;
+          if (item.level === "TRADE") badge = `<span class="text-blue-400 font-bold">[ORDER]</span>`;
+          if (item.level === "PROFIT") badge = `<span class="text-emerald-400 font-bold">[TARGET HIT]</span>`;
+          if (item.level === "STOP") badge = `<span class="text-rose-400 font-bold">[STOP HIT]</span>`;
+          if (item.level === "RISK") badge = `<span class="text-amber-400 font-bold">[RISK/HOURS]</span>`;
+          return `
+            <div class="p-2 rounded-xl bg-slate-900/80 border border-slate-800/80 leading-relaxed text-[11px]">
+              <span class="text-slate-500 font-semibold">${item.time}</span> ${badge}
+              <span class="text-slate-200">${item.message}</span>
+            </div>
+          `;
+        }).join("");
+      } else if (currentRightTab === "trades") {
+        const tradesEl = document.getElementById("right-view-trades");
+        const trades = state.closed_trades || [];
+        if (trades.length === 0) {
+          tradesEl.innerHTML = `<div class="text-center text-slate-500 text-xs py-10">No closed trades yet.</div>`;
+        } else {
+          tradesEl.innerHTML = trades.map(t => {
+            const isWin = t.net_pnl >= 0;
+            const col = isWin ? "text-emerald-400" : "text-rose-400";
+            return `
+              <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs mono">
+                <div>
+                  <div class="font-extrabold text-white flex items-center gap-1.5">
+                    ${t.ticker}
+                    <span class="text-[10px] text-slate-400 font-normal">(${t.direction})</span>
+                  </div>
+                  <div class="text-[10px] text-slate-400">
+                    ${t.exit_reason} • Fee: $${t.friction_fee.toFixed(2)}
+                  </div>
+                </div>
+                <div class="text-right font-bold ${col}">
+                  <div>${isWin ? "+" : ""}${fmtMoney(t.net_pnl)}</div>
+                  <div class="text-[10px]">(${isWin ? "+" : ""}${t.return_pct.toFixed(2)}%)</div>
+                </div>
+              </div>
+            `;
+          }).join("");
+        }
+      } else if (currentRightTab === "clocks") {
+        const clocksEl = document.getElementById("right-view-clocks");
+        const assets = state.assets || {};
+        const enforce = state.bot_status?.enforce_market_hours;
+
+        const clockData = [
+          { name: "NSE Mumbai (India)", code: "NSE", schedule: "09:15–15:30 IST", ticker: "RELIANCE.NS" },
+          { name: "NYSE / NASDAQ (New York)", code: "NYSE", schedule: "09:30–16:00 EST", ticker: "NVDA" },
+          { name: "CME Globex (Chicago)", code: "CME", schedule: "23h/day Mon-Fri", ticker: "GC=F" },
+          { name: "Crypto Spot (Global)", code: "CRYPTO", schedule: "24/7 Non-Stop", ticker: "BTC-USD" },
+        ];
+
+        clocksEl.innerHTML = `
+          <div class="mb-2 p-2 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300">
+            <b>Market Clock Mode:</b> ${enforce ? '🔒 Strict Real Exchange Rules' : '🧪 24/7 Sandbox Override Active'}
+          </div>
+        ` + clockData.map(c => {
+          const item = assets[c.ticker] || {};
+          const isOpen = item.exchange_open;
+          const statusText = isOpen ? "OPEN NOW" : "CLOSED";
+          const statusCol = isOpen ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" : "text-rose-400 bg-rose-500/10 border-rose-500/30";
+
+          return `
+            <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+              <div>
+                <div class="font-bold text-white">${c.name}</div>
+                <div class="text-[10px] text-slate-400 mono">${c.schedule}</div>
+                <div class="text-[10px] text-slate-500 mt-0.5">${item.exchange_reason || ''}</div>
+              </div>
+              <div class="text-right">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold border mono ${statusCol}">
+                  ${statusText}
+                </span>
+                <div class="text-[10px] mono text-slate-400 mt-1">${item.exchange_clock || '--:--'}</div>
+              </div>
+            </div>
+          `;
+        }).join("");
+      }
+    }
+
+    function updateUI(state) {
+      currentState = state;
+      const bot = state.bot_status;
+      const acc = state.account;
+
+      // 1. Update Bot Status Header Badge & Button
+      const statusCont = document.getElementById("bot-status-container");
+      const statusDot = document.getElementById("bot-status-dot");
+      const statusTxt = document.getElementById("bot-status-text");
+      const toggleBtn = document.getElementById("btn-toggle-bot");
+      const toggleTxt = document.getElementById("btn-toggle-bot-text");
+
+      document.getElementById("bot-tick-badge").textContent = `Tick #${bot.tick_count} • ${bot.last_tick_time}`;
+      document.getElementById("gpu-badge").textContent = `${bot.gpu_device} • CUDA ${bot.cuda_version} • ${bot.precision}`;
+
+      if (bot.is_running) {
+        statusCont.className = "flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/35 transition-all duration-300";
+        statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-emerald";
+        statusTxt.className = "text-xs font-bold tracking-wide text-emerald-300";
+        statusTxt.textContent = `BOT RUNNING — AUTO-TRADING ${bot.armed_count} ASSETS`;
+        toggleBtn.className = "px-3.5 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 transition";
+        toggleTxt.textContent = "Pause Bot";
+      } else {
+        statusCont.className = "flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/35 transition-all duration-300";
+        statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-400";
+        statusTxt.className = "text-xs font-bold tracking-wide text-rose-300";
+        statusTxt.textContent = "BOT PAUSED — MANUAL STANDBY";
+        toggleBtn.className = "px-3.5 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 transition";
+        toggleTxt.textContent = "Start Bot";
+      }
+
+      // 2. Update Market Hours Mode Header Toggle
+      const hoursIcon = document.getElementById("hours-icon");
+      const hoursTitle = document.getElementById("hours-title");
+      const hoursPill = document.getElementById("hours-pill");
+      const hoursDesc = document.getElementById("hours-desc");
+
+      if (bot.enforce_market_hours) {
+        hoursIcon.textContent = "🕒";
+        hoursTitle.textContent = "Strict Exchange Hours";
+        hoursPill.className = "text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase";
+        hoursPill.textContent = "Real Clocks";
+        hoursDesc.textContent = "Closed exchanges (NSE / NYSE) frozen";
+      } else {
+        hoursIcon.textContent = "🧪";
+        hoursTitle.textContent = "24/7 Sandbox Override";
+        hoursPill.className = "text-[9px] font-bold px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 uppercase";
+        hoursPill.textContent = "Simulate 24/7";
+        hoursDesc.textContent = "All assets simulated outside hours";
+      }
+
+      // 3. KPI Cards
+      document.getElementById("kpi-equity").textContent = fmtMoney(acc.total_equity);
+      const retBadge = document.getElementById("kpi-return-badge");
+      const retVal = Number(acc.total_return_pct || 0);
+      retBadge.textContent = (retVal >= 0 ? "+" : "") + retVal.toFixed(2) + "%";
+      retBadge.className = retVal >= 0
+        ? "text-xs font-bold mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+        : "text-xs font-bold mono px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-400 border border-rose-500/30";
+
+      document.getElementById("kpi-cash").textContent = fmtMoney(acc.current_cash, 0);
+      document.getElementById("kpi-invested").textContent = fmtMoney(acc.allocated_capital, 0);
+
+      const botRetEl = document.getElementById("kpi-bot-ret");
+      botRetEl.textContent = (retVal >= 0 ? "+" : "") + retVal.toFixed(2) + "%";
+      botRetEl.className = `text-xl lg:text-2xl font-extrabold mono ${retVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+      const mktVal = Number(acc.market_return_pct || 0);
+      const mktRetEl = document.getElementById("kpi-mkt-ret");
+      mktRetEl.textContent = (mktVal >= 0 ? "+" : "") + mktVal.toFixed(2) + "%";
+      mktRetEl.className = `text-xl lg:text-2xl font-extrabold mono ${mktVal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+      const alphaVal = Number(acc.alpha_vs_market_pct || 0);
+      const alphaEl = document.getElementById("kpi-alpha");
+      alphaEl.textContent = `${alphaVal >= 0 ? '+' : ''}${alphaVal.toFixed(2)}% ${alphaVal >= 0 ? 'Outperformance' : 'Lag'}`;
+      alphaEl.className = `font-bold ${alphaVal >= 0 ? 'text-cyan-400' : 'text-rose-400'}`;
+
+      document.getElementById("kpi-open-count").textContent = `${acc.open_positions_count} Open`;
+      const uPnl = Number(acc.unrealized_pnl || 0);
+      const uEl = document.getElementById("kpi-unrealized");
+      uEl.textContent = (uPnl >= 0 ? "+" : "") + fmtMoney(uPnl);
+      uEl.className = `text-2xl lg:text-3xl font-extrabold mono tracking-tight ${uPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+      const audit = acc.audit || {};
+      document.getElementById("kpi-closed-count").textContent = `${audit.total_trades || 0} Trades`;
+      const rPnl = Number(acc.realized_pnl || 0);
+      const rEl = document.getElementById("kpi-realized");
+      rEl.textContent = (rPnl >= 0 ? "+" : "") + fmtMoney(rPnl);
+      rEl.className = `text-2xl lg:text-3xl font-extrabold mono tracking-tight ${rPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+      document.getElementById("kpi-winrate").textContent = `Win: ${(audit.win_rate_pct || 0).toFixed(1)}%`;
+      document.getElementById("kpi-pf").textContent = (audit.profit_factor || 0).toFixed(2);
+      document.getElementById("kpi-friction").textContent = fmtMoney(audit.total_friction_paid || 0);
+
+      // 4. Render All Subsections
+      renderArmedPills(state);
+      renderCharts(state);
+      renderWatchlist(state);
+      renderOpenPositions(state);
+      renderRightColumn(state);
+    }
+
+    // ----------------- API Actions ----------------- //
+
+    async function fetchState() {
+      try {
+        const res = await fetch("/api/dashboard/state");
+        const data = await res.json();
+        updateUI(data);
+      } catch (e) {
+        console.error("Error fetching state:", e);
+      }
+    }
+
+    async function stepTick(shock = null) {
+      try {
+        const url = shock !== null ? `/api/dashboard/step?shock_pct=${shock}` : "/api/dashboard/step";
+        const res = await fetch(url, { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+      } catch (e) {
+        console.error("Step error:", e);
+      }
+    }
+
+    async function toggleBot() {
+      try {
+        const res = await fetch("/api/dashboard/toggle", { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+      } catch (e) {
+        console.error("Toggle error:", e);
+      }
+    }
+
+    async function toggleMarketHours() {
+      try {
+        const res = await fetch("/api/dashboard/toggle-hours", { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+        const mode = data.bot_status?.enforce_market_hours
+          ? "🔒 Strict Market Hours Enforced (Closed markets frozen)"
+          : "🧪 24/7 Sandbox Mode Active (All markets open for simulation)";
+        showToast(mode, data.bot_status?.enforce_market_hours ? "info" : "warning");
+      } catch (e) {
+        console.error("Toggle hours error:", e);
+      }
+    }
+
+    async function toggleSingleAssetArm(ticker) {
+      if (!currentState) return;
+      const currentArmed = new Set(currentState.bot_status?.armed_tickers || []);
+      if (currentArmed.has(ticker)) {
+        currentArmed.delete(ticker);
+      } else {
+        currentArmed.add(ticker);
+      }
+      try {
+        const res = await fetch("/api/dashboard/select-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ armed_tickers: Array.from(currentArmed) })
+        });
+        const data = await res.json();
+        updateUI(data);
+      } catch (e) {
+        console.error("Arming error:", e);
+      }
+    }
+
+    async function applyPreset(preset) {
+      if (!currentState) return;
+      const catalog = currentState.catalog || {};
+      const assets = currentState.assets || {};
+      let targetTickers = [];
+
+      if (preset === "ALL") {
+        targetTickers = Object.keys(assets);
+      } else if (preset === "NONE") {
+        targetTickers = [];
+      } else if (preset === "ALL_LIVE") {
+        targetTickers = Object.keys(assets).filter(tk => assets[tk].tradable_now || assets[tk].exchange_open);
+      } else if (preset === "CRYPTO") {
+        targetTickers = catalog.CRYPTO || ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"];
+      } else if (preset === "COMMODITIES_FX") {
+        targetTickers = [...(catalog.COMMODITIES || ["GC=F", "SI=F", "CL=F"]), ...(catalog.FOREX || ["EURUSD=X", "GBPUSD=X", "USDJPY=X"])];
+      } else if (preset === "INDIAN_NSE") {
+        targetTickers = catalog.INDIAN_NSE || ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "TATAMOTORS.NS"];
+      } else if (preset === "US_EQUITIES") {
+        targetTickers = catalog.US_EQUITIES || ["NVDA", "AAPL", "TSLA", "MSFT", "AMD"];
+      }
+
+      // Any preset tickers not loaded yet can be requested via add_custom_tickers
+      const needToAdd = targetTickers.filter(t => !(t in assets));
+
+      try {
+        const res = await fetch("/api/dashboard/select-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            armed_tickers: targetTickers,
+            add_custom_tickers: needToAdd.length > 0 ? needToAdd : null
+          })
+        });
+        const data = await res.json();
+        updateUI(data);
+        showToast(`Preset Applied: ${targetTickers.length} assets armed.`, "info");
+      } catch (e) {
+        console.error("Preset error:", e);
+      }
+    }
+
+    async function addCustomTicker() {
+      const input = document.getElementById("input-custom-ticker");
+      const raw = input.value.trim();
+      if (!raw) return;
+
+      const tickersToAdd = raw.split(/[\s,]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+      if (tickersToAdd.length === 0) return;
+
+      const btn = document.getElementById("btn-add-ticker");
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<span class="animate-spin mr-1">↻</span> Loading...`;
+      btn.disabled = true;
+
+      try {
+        const currentArmed = currentState?.bot_status?.armed_tickers || [];
+        const newArmed = Array.from(new Set([...currentArmed, ...tickersToAdd]));
+
+        const res = await fetch("/api/dashboard/select-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            armed_tickers: newArmed,
+            add_custom_tickers: tickersToAdd
+          })
+        });
+        const data = await res.json();
+        input.value = "";
+        if (tickersToAdd.length > 0) {
+          selectedTicker = tickersToAdd[0];
+        }
+        updateUI(data);
+        showToast(`Added ${tickersToAdd.join(", ")} to active terminal!`, "info");
+      } catch (e) {
+        console.error("Add ticker error:", e);
+        showToast(`Failed to add symbols: ${e.message}`, "error");
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function quickAddSymbol(sym) {
+      document.getElementById("input-custom-ticker").value = sym;
+      addCustomTicker();
+    }
+
+    async function quickOrder(ticker, direction) {
+      const alloc = Number(document.getElementById("manual-alloc")?.value || 10);
+      try {
+        const res = await fetch("/api/dashboard/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker, direction, allocation_weight_pct: alloc })
+        });
+        const data = await res.json();
+        updateUI(data);
+
+        // Check if order was rejected due to market hours
+        const asset = (data.assets || {})[ticker];
+        const enforce = data.bot_status?.enforce_market_hours;
+        if (asset && !asset.exchange_open && enforce) {
+          showToast(`⚠️ Order Rejected: ${asset.exchange_name} is Closed (${asset.exchange_reason || asset.exchange_schedule}). Switch to '24/7 Sandbox Mode' to execute!`, "warning");
+        }
+      } catch (e) {
+        console.error("Order error:", e);
+      }
+    }
+
+    async function placeManualOrder(direction) {
+      await quickOrder(selectedTicker, direction);
+    }
+
+    async function closePosition(posId) {
+      try {
+        const res = await fetch(`/api/dashboard/close/${posId}`, { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+      } catch (e) {
+        console.error("Close error:", e);
+      }
+    }
+
+    async function flattenAll() {
+      try {
+        const res = await fetch("/api/dashboard/flatten", { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+        showToast("Liquidated all open positions to cash.", "info");
+      } catch (e) {
+        console.error("Flatten error:", e);
+      }
+    }
+
+    async function resetAccount() {
+      try {
+        const res = await fetch("/api/dashboard/reset", { method: "POST" });
+        const data = await res.json();
+        updateUI(data);
+        showToast("Account balance reset to $100,000.00", "info");
+      } catch (e) {
+        console.error("Reset error:", e);
+      }
+    }
+
+    // ----------------- Keyboard Shortcuts & Startup ----------------- //
+    window.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") {
+        return;
+      }
+      if (e.code === "Space") {
+        e.preventDefault();
+        toggleBot();
+      } else if (e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        stepTick(null);
+      } else if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        toggleMarketHours();
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      initCharts();
+      await fetchState();
+
+      // Poll live ticks every 2.5 seconds when bot is running, or sync state every 3s when paused
+      setInterval(async () => {
+        if (currentState?.bot_status?.is_running) {
+          await stepTick(null);
+        } else {
+          await fetchState();
+        }
+      }, 2500);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+# TradeBot: The Neuro-Causal Market Prediction Engine
+# Configuration Settings
+
+engine:
+  name: "SYNAPSE-TITAN"
+  version: "1.0.0"
+  random_seed: 42
+
+# Default Universes for Multi-Asset Observation
+universes:
+  us_equities:
+    - "AAPL"
+    - "NVDA"
+    - "MSFT"
+    - "TSLA"
+    - "SPY"
+    - "QQQ"
+  indian_equities:
+    - "RELIANCE.NS"
+    - "TCS.NS"
+    - "INFY.NS"
+    - "HDFCBANK.NS"
+    - "^NSEI"
+  crypto:
+    - "BTC-USD"
+    - "ETH-USD"
+    - "SOL-USD"
+  commodities:
+    - "GC=F"       # Gold Futures
+    - "SI=F"       # Silver Futures
+    - "CL=F"       # Crude Oil Futures
+    - "GLD"        # SPDR Gold Shares
+  forex:
+    - "EURUSD=X"   # Euro / US Dollar
+    - "GBPUSD=X"   # British Pound / US Dollar
+    - "USDJPY=X"   # US Dollar / Japanese Yen
+    - "USDINR=X"   # US Dollar / Indian Rupee
+    - "DX-Y.NYB"   # US Dollar Index
+
+# Data Ingestion Settings
+data:
+  cache_dir: "data/cache"
+  default_period: "2y"          # Lookback window for training/calibration
+  default_interval: "1d"        # Primary bar interval: 1d, 1h, 15m
+  cache_expiry_hours: 4         # Cache refresh cadence
+
+# Fractional Differentiation Settings (Memory Preservation)
+fracdiff:
+  min_weight_threshold: 0.0001
+  adf_pvalue_threshold: 0.05    # Stationarity target
+  d_search_range: [0.1, 0.9]
+  d_step: 0.05
+
+# Hidden Markov Model Regime Detection
+regime:
+  n_regimes: 3                  # 0: Low-Vol Bull/Trend, 1: Choppy/Neutral, 2: High-Vol Crisis
+  covariance_type: "full"
+  n_iter: 500
+
+# Triple-Barrier & Meta-Labeling
+meta_labeling:
+  profit_target_vol_mult: 1.5   # Target = 1.5 * Local Volatility (ATR)
+  stop_loss_vol_mult: 1.0       # Stop = 1.0 * Local Volatility (ATR)
+  max_holding_periods: 5        # Time barrier (bars)
+  min_meta_prob_threshold: 0.55 # Minimum confidence to execute
+
+# Risk Governance & Bet Sizing
+risk:
+  kelly_fraction: 0.35          # Quarter-to-Half Kelly sizing (0.25 to 0.50)
+  target_annual_vol: 0.15       # 15% Annualized target volatility
+  warning_drawdown: 0.08        # 8% Drawdown begins convex de-leveraging
+  max_kill_drawdown: 0.15       # 15% Drawdown triggers hard cash liquidation
+  max_gross_leverage: 1.5       # Maximum allowable gross exposure
+
+# Statutory Frictions & Fees
+frictions:
+  us:
+    sec_fee: 0.0000278
+    finra_taf: 0.000166
+    brokerage_per_share: 0.0005
+    taker_fee_bps: 2.0
+  nse_cash:
+    stt_sell: 0.00025           # 0.025% on intraday sell
+    exchange_fee: 0.0000325
+    stamp_duty_buy: 0.00003
+    gst_rate: 0.18              # 18% GST on brokerage + exchange
+    brokerage_bps: 3.0
+  crypto:
+    taker_fee_bps: 4.0
+    maker_rebate_bps: -1.0
+  forex:
+    spread_bps: 1.5             # ~1.5 pips average EUR/USD spread
+    commission_bps: 0.5
+  commodities:
+    futures_exchange_fee_bps: 1.0
+    brokerage_bps: 1.0
