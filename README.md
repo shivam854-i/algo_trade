@@ -50,14 +50,27 @@ Ensure Python 3.10+ is installed:
 pip install -r requirements.txt
 ```
 
-### 2. Interactive Analytical Web Dashboard
-Launch the Streamlit analytical platform:
+### 2. Modern Institutional Trading Cockpit & FastAPI Backend
+Launch the high-performance unified trading cockpit (React 18 + Vite + FastAPI):
+```bash
+python -m uvicorn server:app --host 127.0.0.1 --port 8501 --reload
+```
+*Access in your browser at `http://localhost:8501`. Features:*
+- 🖥️ **Leak-Free React 18 Single-Page Cockpit**: Uses $O(1)$ client ring buffers (`RingBuffer<T>`) keeping memory strictly bounded to $<30\text{ MB}$ (eliminating browser memory bloat).
+- 📉 **TradingView Lightweight Charts**: Hardware-accelerated canvas charts with automatic cleanup upon unmount.
+- 🕒 **Physical Market Session Timings**: Real-world operating schedules and statutory holiday calendars for **NSE/BSE (09:15–15:30 IST)**, **NYSE/NASDAQ (09:30–16:00 ET)**, **COMEX Gold (23/5)**, and **Crypto (24/7)** with live countdown clocks.
+- 🔒 **Pre-Market Order Queuing**: Off-hours orders safely held in `PRE_MARKET_PENDING` with soft cash reservation, auto-executing on market open.
+- ⏸️ **Tab Inactivity Auto-Pause**: Automatically halts polling and rendering when the browser tab is hidden (`document.hidden`), resuming instantly when active.
+- 📡 **Data Ingestion & Paid API Guide**: Complete empirical latency and staleness analysis detailed in [`DATA_INGESTION_AUDIT_AND_API_RECOMMENDATION.md`](DATA_INGESTION_AUDIT_AND_API_RECOMMENDATION.md).
+
+---
+
+### 3. Interactive Analytical Web Platform (Streamlit Alternative)
+Launch the standalone exploratory analytical dashboard:
 ```bash
 streamlit run app.py
 ```
-*Access in browser at `http://localhost:8501`. Features:*
-- 📈 **Interactive Forecast & Volatility Cone**: Forward multi-horizon quantile projections ($q_{10}, q_{50}, q_{90}$).
-- 🧠 **Feature Explanations (XAI)**: Feature contributions and GPU neural conviction score.
+*Access in browser at `http://localhost:8501` (when server.py is stopped).*
 - 🛡️ **Statutory Taxes & Risk**: Jurisdiction fee breakdown and Kelly sizing status.
 - 🧪 **Walk-Forward Strategy Backtest**: 1-click historical audit with zero lookahead bias.
 - 💼 **Live Paper-Trading & Verified Ledger**: Active position management, one-click order execution, and live PnL audit.
