@@ -137,6 +137,42 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 
 ---
 
+## 🧭 User-Controlled Trading Session Setup System
+
+SYNAPSE-TITAN features a guided **6-Step Trading Session Setup Wizard** and quantitative session governance system. Before the autonomous paper-trading engine can execute trades, users explicitly configure and approve their session parameters.
+
+### 1. Guided 6-Step Setup Wizard
+1. **Market Jurisdiction**: Select between **US Equities** (`USD`), **Indian Equities** (`INR`), **Cryptocurrencies**, **Commodities**, and **Forex**. Market hours, statutory taxes, and currency adapt dynamically.
+2. **Approved Basket Selection**: Select 1 to 20 instruments. Use the **Auto-select for me** feature powered by `UniverseSelector` to filter liquid candidates based on Average Daily Volume ($ADV \ge \$5\text{M}$ / $\text{₹}50\text{M}$), bid-ask spread ($\le 25\text{ bps}$), data quality ($Q \ge 0.90$), and volatility.
+3. **Holding Horizon**: Binds model parameters across **1 Hour** (`5m` bars), **1 Day** (`15m`/`1h` bars), or **1 Week** (`1d` bars).
+4. **Session Duration & Policy**: Choose duration presets (`1h`, `4h`, `1d`, `1wk`), custom intervals, or **Manual Stop**, with selectable end-policies (`CLOSE_ALL` liquidation vs `KEEP_OPEN` preservation).
+5. **Virtual Capital Allocation**: Allocate virtual funds in local currency ($1,000 to $10,000,000). Features a strict paper-trading isolation guarantee and model invariance guarantee.
+6. **Confirmation Review**: Audit parameters with one-click jump-edit links before launching.
+
+### 2. Quantitative Universe & Opportunity Decision Engine (`src/strategy/`)
+- **`UniverseSelector`**: Filters assets through quantitative gates (spread $\le 25\text{ bps}$, liquidity, missing bar ratio).
+- **`TradeEvaluator`**: Computes calibrated Net Expectancy with an uncertainty margin:
+  $$EV = (P_{\text{win}} - 1.0\sigma_p) \cdot E[W] - (P_{\text{loss}} + 1.0\sigma_p) \cdot E[L] - \text{Friction}$$
+  Rejects trades with non-positive expectancy ($EV \le 0$).
+- **`PortfolioSelector`**: Fractional Kelly & HRP allocation enforcing an absolute **100% Cash Guarantee** when opportunities lack positive expectancy.
+- **`DecisionExplainer`**: Provides transparent mathematical explanations for every accepted trade, rejected trade, and cash preservation decision.
+
+### 3. Session REST API Endpoints (`/api/sessions`)
+- `GET /api/sessions/status`: Physical exchange session status, countdowns, and trading holiday tracking.
+- `GET /api/sessions/active`: Returns currently active operational session (`RUNNING` or `PAUSED`).
+- `POST /api/sessions/recommendations`: Quantitative candidate filtering via `UniverseSelector`.
+- `GET /api/sessions`: List sessions with status and market filtering.
+- `POST /api/sessions`: Creates a new session in `CREATED` state.
+- `GET /api/sessions/{session_id}`: Retrieves details for a specific session.
+- `PUT /api/sessions/{session_id}`: Updates mutable parameters of a `CREATED` or `PAUSED` session.
+- `POST /api/sessions/{session_id}/start`: Launches a session, sets horizon parameters, and arms the bot.
+- `POST /api/sessions/{session_id}/pause`: Suspends entries while preserving open positions.
+- `POST /api/sessions/{session_id}/resume`: Resumes a paused session and extends the countdown timer.
+- `POST /api/sessions/{session_id}/stop`: Terminates session and executes `CLOSE_ALL` / `KEEP_OPEN` policy.
+- `GET /api/sessions/{session_id}/performance`: Computes isolated session KPIs, win rate, and profit factor.
+
+---
+
 ## ⚡ Hardware Acceleration & NVIDIA RTX 4060 GPU
 
 The engine includes auto-probing hardware orchestration (`src/models/gpu_acceleration.py`):
