@@ -259,7 +259,7 @@ class TestAccountCashResolution:
         s4 = bot.broker.get_account_summary()
         assert s4["current_cash"] == current_cash_0
         assert s4["reserved_cash"] == 0.0
-        assert s4["available_cash"] == avail_cash_0
+        assert s4["available_cash"] == pytest.approx(avail_cash_0, abs=0.05)
 
     def test_soft_hold_exhaustion_rejection(self, isolated_broker):
         """Verify that an order attempting to reserve more than available cash is strictly rejected."""

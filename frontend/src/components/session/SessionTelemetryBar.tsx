@@ -20,6 +20,7 @@ export interface SessionTelemetryBarProps {
   onResumeSession: (sessionId: string) => Promise<void>;
   onStopSession: (sessionId: string, reason?: string) => Promise<void>;
   onOpenWizard: () => void;
+  onOpenHistory?: () => void;
 }
 
 export const SessionTelemetryBar: React.FC<SessionTelemetryBarProps> = ({
@@ -33,6 +34,7 @@ export const SessionTelemetryBar: React.FC<SessionTelemetryBarProps> = ({
   onResumeSession,
   onStopSession,
   onOpenWizard,
+  onOpenHistory,
 }) => {
   const [countdownSec, setCountdownSec] = useState<number | null>(
     session?.remaining_seconds ?? null
@@ -159,6 +161,7 @@ export const SessionTelemetryBar: React.FC<SessionTelemetryBarProps> = ({
           onResumeSession={onResumeSession}
           onStopSession={onStopSession}
           onOpenWizard={onOpenWizard}
+          onOpenHistory={onOpenHistory}
         />
       </div>
 

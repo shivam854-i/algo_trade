@@ -10,6 +10,7 @@ import { ActivityLog } from "./components/ActivityLog";
 import { TradingSessionWizardModal } from "./components/wizard/TradingSessionWizardModal";
 import { SessionTelemetryBar } from "./components/session/SessionTelemetryBar";
 import { SessionGatingBanner } from "./components/session/SessionGatingBanner";
+import { SessionHistoryModal } from "./components/session/SessionHistoryModal";
 import { useDashboardStream } from "./hooks/useDashboardStream";
 import { ShieldCheck, HardDrive, Cpu, AlertCircle } from "lucide-react";
 
@@ -46,6 +47,7 @@ export const App: React.FC = () => {
   } = useDashboardStream({ pollIntervalMs: 2500, chartCapacity: 500, logCapacity: 100 });
 
   const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
 
   const selectedAsset = state?.assets?.[selectedTicker];
   const armedTickers = state?.bot_status?.armed_tickers ?? [];
@@ -100,7 +102,10 @@ export const App: React.FC = () => {
         {/* 2. Session Gating Banner (High-visibility warning when execution is gated) */}
         {!hasActiveSession && (
           <section aria-label="Session Gating Banner">
-            <SessionGatingBanner onOpenWizard={() => setIsWizardOpen(true)} />
+            <SessionGatingBanner
+              onOpenWizard={() => setIsWizardOpen(true)}
+              onOpenHistory={() => setIsHistoryOpen(true)}
+            />
           </section>
         )}
 
@@ -126,6 +131,7 @@ export const App: React.FC = () => {
                 await stopSession(id, reason);
               }}
               onOpenWizard={() => setIsWizardOpen(true)}
+              onOpenHistory={() => setIsHistoryOpen(true)}
             />
           </section>
         )}
@@ -224,6 +230,12 @@ export const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Historical Audit Drawer */}
+      <SessionHistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+      />
 
       {/* Institutional Status Footer */}
       <footer className="glass-panel border-t border-slate-800/80 px-4 py-2.5 text-[11px] font-mono text-slate-500 flex flex-wrap items-center justify-between gap-3">

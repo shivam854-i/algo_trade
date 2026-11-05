@@ -465,6 +465,13 @@ class TestFastAPISessionEndpoints:
     def test_full_rest_session_lifecycle(self):
         client = TestClient(app)
 
+        # Stop any preexisting active session so the test starts from clean slate
+        r_existing = client.get("/api/sessions/active")
+        if r_existing.status_code == 200:
+            existing = r_existing.json().get("session")
+            if existing and existing.get("id"):
+                client.post(f"/api/sessions/{existing['id']}/stop", json={"reason": "Test setup reset"})
+
         # 1. Existing physical exchange endpoint must NOT be shadowed
         r_status = client.get("/api/sessions/status")
         assert r_status.status_code == 200
