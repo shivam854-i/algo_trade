@@ -173,17 +173,61 @@ def calendar() -> MarketCalendarManager:
 
 @pytest.fixture
 def mock_live_bot(isolated_broker: PaperBroker) -> LiveBotController:
-    """Initializes a lightweight LiveBotController with simulated analysis objects."""
+    """Initializes a lightweight LiveBotController with simulated analysis objects and deterministic mocked market feed."""
+    from src.data.provider_base import BaseMarketDataProvider, LiveQuote
+    import pandas as pd
+
+    class _MockDeterministicFeed(BaseMarketDataProvider):
+        def __init__(self, initial_prices):
+            self._prices = dict(initial_prices)
+            self._rng = np.random.default_rng(42)
+
+        def fetch_historical_ohlcv(self, ticker, period="1y", interval="1d"):
+            return pd.DataFrame()
+
+        def get_quote(self, ticker, market_open=True):
+            tk = ticker.upper()
+            p = self._prices.get(tk, 100.0)
+            step = float(self._rng.normal(0.0005, 0.0025))
+            new_p = max(0.0001, p * (1.0 + step))
+            self._prices[tk] = new_p
+            now_iso = datetime.now(timezone.utc).isoformat()
+            return LiveQuote(
+                ticker=tk,
+                last_price=round(new_p, 4),
+                bid_price=round(new_p * 0.9998, 4),
+                ask_price=round(new_p * 1.0002, 4),
+                volume=1000.0,
+                timestamp_utc=now_iso,
+                received_at_utc=now_iso,
+                is_delayed=False,
+                delay_minutes=0,
+                is_stale=False,
+                age_seconds=0.1,
+                latency_ms=1.0,
+                provider_name="MockDeterministicFeed",
+                day_open=p,
+                day_high=max(p, new_p),
+                day_low=min(p, new_p),
+                prev_close=p,
+                status="LIVE",
+            )
+
+        def is_realtime(self) -> bool:
+            return True
+
     engine = MarketPredictionEngine()
     bot = LiveBotController(engine=engine, broker=isolated_broker)
     bot.calendar = MarketCalendarManager()
 
     # Pre-seed analyses with mock assets across jurisdictions
     tickers = ["BTC-USD", "ETH-USD", "GC=F", "EURUSD=X", "RELIANCE.NS", "NVDA"]
+    init_prices = {}
     for tk in tickers:
         m_type = bot.calendar.detect_market_type(tk)
         jurisdiction = "CRYPTO" if m_type == "CRYPTO" else ("COMMODITY" if m_type == "COMMODITY" else ("FOREX" if m_type == "FOREX" else ("INDIAN_NSE" if m_type == "NSE_CASH" else "US_EQUITIES")))
         price = 65000.0 if "BTC" in tk else (3000.0 if "ETH" in tk else (2350.0 if "GC" in tk else (1.0850 if "EUR" in tk else (2950.0 if "RELIANCE" in tk else 125.0))))
+        init_prices[tk] = price
 
         bot.base_prices[tk] = price
         bot.live_prices[tk] = price
@@ -191,6 +235,7 @@ def mock_live_bot(isolated_broker: PaperBroker) -> LiveBotController:
         bot.hrp_weights[tk] = 1.0 / len(tickers)
         bot.analyses[tk] = MockAnalysis(ticker=tk, current_price=price, market_jurisdiction=jurisdiction)
 
+    bot.data_provider = _MockDeterministicFeed(init_prices)
     bot.watchlist = list(tickers)
     bot.armed_tickers = set(tickers)
     bot._initialized = True

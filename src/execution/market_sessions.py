@@ -152,6 +152,13 @@ class MarketCalendarManager:
             date(2027, 12, 24): "Christmas Day (Observed)",
         }
 
+        # NYSE / NASDAQ Scheduled Early Closes at 13:00 ET (2026 & 2027)
+        self.nyse_early_closes: Dict[date, str] = {
+            date(2026, 11, 27): "Day After Thanksgiving (13:00 ET Early Close)",
+            date(2026, 12, 24): "Christmas Eve (13:00 ET Early Close)",
+            date(2027, 11, 26): "Day After Thanksgiving (13:00 ET Early Close)",
+        }
+
     def detect_market_type(self, ticker: str) -> str:
         """Determines the market class / jurisdiction for a given asset symbol."""
         tk = ticker.upper()
@@ -426,6 +433,10 @@ class MarketCalendarManager:
             )
 
         # Intraday US Timing:
+        regular_close = time(13, 0) if today in self.nyse_early_closes else time(16, 0)
+        early_label = self.nyse_early_closes.get(today)
+        sched_str = "09:30–13:00 ET (Early Close)" if early_label else "09:30–16:00 ET"
+
         # 00:00 - 04:00: Overnight CLOSED
         if t < time(4, 0):
             next_pre_dt = datetime.combine(today, time(4, 0), tzinfo=self.tz_et)
@@ -437,12 +448,12 @@ class MarketCalendarManager:
                 exch="NYSE / NASDAQ",
                 tz="America/New_York",
                 clock=now_et.strftime("%H:%M:%S %Z"),
-                sched="09:30–16:00 ET",
+                sched=sched_str,
                 reason="US Market Closed (Overnight — Pre-market opens 04:00 ET)",
                 next_s=MarketState.PRE_MARKET,
                 next_dt=next_pre_dt,
                 now_utc=now_utc,
-                holiday_name=None,
+                holiday_name=early_label,
             )
         # 04:00 - 09:30: PRE_MARKET
         elif time(4, 0) <= t < time(9, 30):
@@ -455,16 +466,16 @@ class MarketCalendarManager:
                 exch="NYSE / NASDAQ",
                 tz="America/New_York",
                 clock=now_et.strftime("%H:%M:%S %Z"),
-                sched="09:30–16:00 ET",
+                sched=sched_str,
                 reason="US Pre-Market Trading Session",
                 next_s=MarketState.OPEN,
                 next_dt=next_open_dt,
                 now_utc=now_utc,
-                holiday_name=None,
+                holiday_name=early_label,
             )
-        # 09:30 - 16:00: Regular Trading Hours (OPEN)
-        elif time(9, 30) <= t <= time(16, 0):
-            next_close_dt = datetime.combine(today, time(16, 0), tzinfo=self.tz_et)
+        # 09:30 - regular_close: Regular Trading Hours (OPEN)
+        elif time(9, 30) <= t <= regular_close:
+            next_close_dt = datetime.combine(today, regular_close, tzinfo=self.tz_et)
             return self._format_result(
                 ticker=ticker,
                 m_type="US_EQUITIES",
@@ -473,15 +484,15 @@ class MarketCalendarManager:
                 exch="NYSE / NASDAQ",
                 tz="America/New_York",
                 clock=now_et.strftime("%H:%M:%S %Z"),
-                sched="09:30–16:00 ET",
-                reason="US Regular Trading Session Live",
+                sched=sched_str,
+                reason=f"US Regular Trading Session Live ({early_label})" if early_label else "US Regular Trading Session Live",
                 next_s=MarketState.POST_MARKET,
                 next_dt=next_close_dt,
                 now_utc=now_utc,
-                holiday_name=None,
+                holiday_name=early_label,
             )
-        # 16:00 - 20:00: POST_MARKET (After-Hours)
-        elif time(16, 0) < t <= time(20, 0):
+        # regular_close - 20:00: POST_MARKET (After-Hours)
+        elif regular_close < t <= time(20, 0):
             next_close_dt = datetime.combine(today, time(20, 0), tzinfo=self.tz_et)
             return self._format_result(
                 ticker=ticker,
@@ -491,12 +502,12 @@ class MarketCalendarManager:
                 exch="NYSE / NASDAQ",
                 tz="America/New_York",
                 clock=now_et.strftime("%H:%M:%S %Z"),
-                sched="09:30–16:00 ET",
+                sched=sched_str,
                 reason="US After-Hours Trading Session",
                 next_s=MarketState.CLOSED,
                 next_dt=next_close_dt,
                 now_utc=now_utc,
-                holiday_name=None,
+                holiday_name=early_label,
             )
         # 20:00 - 23:59: Overnight CLOSED
         else:

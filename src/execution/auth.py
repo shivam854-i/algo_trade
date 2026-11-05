@@ -130,11 +130,11 @@ class AuthManager:
             elif tier == "PRO":
                 quota = 1000
                 intervals = ("1d", "1h", "30m", "15m")
-                broker_enabled = True
+                broker_enabled = False  # Strictly paper-trading-only: live brokerage disabled
             else:  # INSTITUTIONAL
                 quota = 100000
                 intervals = ("1d", "1h", "30m", "15m", "5m", "1m")
-                broker_enabled = True
+                broker_enabled = False  # Strictly paper-trading-only: live brokerage disabled
 
             # Increment count
             cursor.execute("""

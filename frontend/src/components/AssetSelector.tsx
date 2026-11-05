@@ -1,6 +1,23 @@
-import React, { useState } from "react";
-import { Plus, Search, Shield, ShieldOff } from "lucide-react";
-import { AssetTelemetry } from "../types";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Bot,
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Plus,
+  Search,
+  Shield,
+  ShieldOff,
+  Sparkles,
+  X,
+  Loader2,
+} from "lucide-react";
+import {
+  AssetTelemetry,
+  BotTradeResponse,
+  SearchInstrumentResult,
+} from "../types";
 
 interface AssetSelectorProps {
   assets: Record<string, AssetTelemetry>;
@@ -9,9 +26,69 @@ interface AssetSelectorProps {
   armedTickers: string[];
   onToggleArm: (ticker: string) => void;
   onAddCustomTicker: (ticker: string) => void;
+  onPlaceBotTrade?: (
+    ticker: string,
+    direction?: "AUTO" | "LONG" | "SHORT",
+    allocWeight?: number
+  ) => Promise<BotTradeResponse>;
 }
 
 type CategoryTab = "ALL" | "NSE" | "US" | "COMMODITY" | "CRYPTO" | "FOREX";
+
+// Instant client-side fallback catalog so search suggestions work in 0ms even before API round-trip
+const FALLBACK_SEARCH_CATALOG: Array<{
+  ticker: string;
+  name: string;
+  category: string;
+  exchange: string;
+  sector: string;
+}> = [
+  { ticker: "NVDA", name: "NVIDIA Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors & AI" },
+  { ticker: "AAPL", name: "Apple Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Consumer Technology" },
+  { ticker: "MSFT", name: "Microsoft Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Cloud & Software" },
+  { ticker: "AMD", name: "Advanced Micro Devices Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
+  { ticker: "TSLA", name: "Tesla Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "EV & Robotics" },
+  { ticker: "AMZN", name: "Amazon.com Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Cloud & E-Commerce" },
+  { ticker: "GOOGL", name: "Alphabet Inc. (Google)", category: "US_EQUITIES", exchange: "NASDAQ", sector: "AI & Search" },
+  { ticker: "META", name: "Meta Platforms Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Social & AI" },
+  { ticker: "NFLX", name: "Netflix Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Streaming Media" },
+  { ticker: "AVGO", name: "Broadcom Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
+  { ticker: "PLTR", name: "Palantir Technologies Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Enterprise AI & Defense" },
+  { ticker: "COIN", name: "Coinbase Global Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Fintech & Crypto" },
+  { ticker: "CRM", name: "Salesforce Inc.", category: "US_EQUITIES", exchange: "NYSE", sector: "Enterprise Software" },
+  { ticker: "ORCL", name: "Oracle Corporation", category: "US_EQUITIES", exchange: "NYSE", sector: "Cloud Infrastructure" },
+  { ticker: "INTC", name: "Intel Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
+  { ticker: "MU", name: "Micron Technology Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Memory & Storage" },
+  { ticker: "ARM", name: "Arm Holdings plc", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
+  { ticker: "SMCI", name: "Super Micro Computer Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "AI Servers" },
+  { ticker: "JPM", name: "JPMorgan Chase & Co.", category: "US_EQUITIES", exchange: "NYSE", sector: "Banking & Finance" },
+  { ticker: "V", name: "Visa Inc.", category: "US_EQUITIES", exchange: "NYSE", sector: "Payments" },
+  { ticker: "SPY", name: "SPDR S&P 500 ETF Trust", category: "US_EQUITIES", exchange: "NYSE", sector: "Index ETF" },
+  { ticker: "QQQ", name: "Invesco QQQ Trust (NASDAQ-100)", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Index ETF" },
+  { ticker: "RELIANCE.NS", name: "Reliance Industries Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Energy, Telecom & Retail" },
+  { ticker: "TCS.NS", name: "Tata Consultancy Services Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "IT Services" },
+  { ticker: "HDFCBANK.NS", name: "HDFC Bank Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Private Banking" },
+  { ticker: "INFY.NS", name: "Infosys Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "IT Services" },
+  { ticker: "ICICIBANK.NS", name: "ICICI Bank Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Private Banking" },
+  { ticker: "SBIN.NS", name: "State Bank of India (SBI)", category: "INDIAN_NSE", exchange: "NSE", sector: "PSU Banking" },
+  { ticker: "BHARTIARTL.NS", name: "Bharti Airtel Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Telecom" },
+  { ticker: "TATAMOTORS.NS", name: "Tata Motors Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Automobiles & EV" },
+  { ticker: "ITC.NS", name: "ITC Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "FMCG & Hospitality" },
+  { ticker: "LT.NS", name: "Larsen & Toubro Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Infrastructure & Engineering" },
+  { ticker: "BAJFINANCE.NS", name: "Bajaj Finance Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "NBFC & Finance" },
+  { ticker: "HAL.NS", name: "Hindustan Aeronautics Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Aerospace & Defense" },
+  { ticker: "BTC-USD", name: "Bitcoin (BTC / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Layer-1 Digital Asset" },
+  { ticker: "ETH-USD", name: "Ethereum (ETH / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Smart Contracts" },
+  { ticker: "SOL-USD", name: "Solana (SOL / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "High-Throughput L1" },
+  { ticker: "XRP-USD", name: "Ripple XRP (XRP / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Cross-Border Payments" },
+  { ticker: "DOGE-USD", name: "Dogecoin (DOGE / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Digital Currency" },
+  { ticker: "GC=F", name: "Gold Futures (COMEX)", category: "COMMODITIES", exchange: "CME/COMEX", sector: "Precious Metals" },
+  { ticker: "SI=F", name: "Silver Futures (COMEX)", category: "COMMODITIES", exchange: "CME/COMEX", sector: "Precious Metals" },
+  { ticker: "CL=F", name: "WTI Crude Oil Futures", category: "COMMODITIES", exchange: "CME/NYMEX", sector: "Energy" },
+  { ticker: "EURUSD=X", name: "EUR / USD Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
+  { ticker: "GBPUSD=X", name: "GBP / USD Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
+  { ticker: "USDJPY=X", name: "USD / JPY Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
+];
 
 export const AssetSelector: React.FC<AssetSelectorProps> = ({
   assets,
@@ -20,26 +97,256 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
   armedTickers,
   onToggleArm,
   onAddCustomTicker,
+  onPlaceBotTrade,
 }) => {
   const [activeTab, setActiveTab] = useState<CategoryTab>("ALL");
-  const [customInput, setCustomInput] = useState<string>("");
-  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [searchResults, setSearchResults] = useState<SearchInstrumentResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [botAllocPct, setBotAllocPct] = useState<number>(0); // 0 = Kelly Auto-Size
+  const [submittingKey, setSubmittingKey] = useState<string | null>(null);
+  const [tradeBanner, setTradeBanner] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-  const handleAddCustom = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanTicker = customInput.trim().toUpperCase();
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Global keyboard shortcut "/" or "Ctrl+K" to focus the Stock Search Bar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if ((e.key === "/" && !isInput) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchOpen(true);
+      } else if (e.key === "Escape" && isSearchOpen) {
+        setIsSearchOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isSearchOpen]);
+
+  // Close search dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Build local instant search results merged with live telemetry
+  const buildLocalResults = (q: string, cat: CategoryTab): SearchInstrumentResult[] => {
+    const qLower = q.trim().toLowerCase();
+    const qUpper = q.trim().toUpperCase();
+
+    const matched = FALLBACK_SEARCH_CATALOG.filter((item) => {
+      if (cat === "NSE" && item.category !== "INDIAN_NSE") return false;
+      if (cat === "US" && item.category !== "US_EQUITIES") return false;
+      if (cat === "COMMODITY" && item.category !== "COMMODITIES") return false;
+      if (cat === "CRYPTO" && item.category !== "CRYPTO") return false;
+      if (cat === "FOREX" && item.category !== "FOREX") return false;
+
+      if (!qLower) return true;
+      return (
+        item.ticker.toLowerCase().includes(qLower) ||
+        item.name.toLowerCase().includes(qLower) ||
+        item.sector.toLowerCase().includes(qLower) ||
+        item.exchange.toLowerCase().includes(qLower)
+      );
+    }).slice(0, 12);
+
+    const results: SearchInstrumentResult[] = matched.map((item) => {
+      const live = assets[item.ticker];
+      return {
+        ticker: item.ticker,
+        name: item.name,
+        category: item.category,
+        exchange: item.exchange,
+        sector: item.sector,
+        in_watchlist: Boolean(live),
+        is_armed: armedTickers.includes(item.ticker),
+        has_open_position: Boolean(live?.has_open_position),
+        current_price: live ? live.current_price : null,
+        decimals: live ? live.decimals : item.category === "FOREX" ? 4 : 2,
+        signal: live ? live.signal : null,
+        primary_direction: live ? live.primary_direction : null,
+        confidence_pct: live ? live.confidence_pct : null,
+        target_price: live ? live.target_price : null,
+        stop_price: live ? live.stop_price : null,
+        kelly_weight_pct: live ? live.kelly_weight_pct : null,
+        regime: live ? live.regime : null,
+        exchange_open: live ? live.exchange_open : true,
+        tradable_now: live ? live.tradable_now : true,
+        is_custom: false,
+      };
+    });
+
+    if (
+      qUpper &&
+      qUpper.length <= 18 &&
+      !results.some((r) => r.ticker.toUpperCase() === qUpper)
+    ) {
+      results.push({
+        ticker: qUpper,
+        name: `Load & Trade Custom Symbol '${qUpper}'`,
+        category: qUpper.endsWith(".NS") ? "INDIAN_NSE" : "US_EQUITIES",
+        exchange: qUpper.endsWith(".NS") ? "NSE" : "GLOBAL",
+        sector: "Direct Market Feed Lookup",
+        in_watchlist: false,
+        is_armed: false,
+        has_open_position: false,
+        current_price: null,
+        decimals: 2,
+        signal: null,
+        primary_direction: null,
+        confidence_pct: null,
+        target_price: null,
+        stop_price: null,
+        kelly_weight_pct: null,
+        regime: null,
+        exchange_open: true,
+        tradable_now: true,
+        is_custom: true,
+      });
+    }
+
+    return results;
+  };
+
+  // Query backend `/api/dashboard/search` when user types or opens search bar
+  useEffect(() => {
+    const localList = buildLocalResults(searchQuery, activeTab);
+    setSearchResults(localList);
+
+    if (!isSearchOpen && !searchQuery.trim()) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const params = new URLSearchParams({
+          q: searchQuery.trim(),
+          category: activeTab,
+          limit: "14",
+        });
+        const res = await fetch(`/api/dashboard/search?${params.toString()}`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          if (Array.isArray(data.results) && data.results.length > 0) {
+            setSearchResults(data.results);
+          }
+        }
+      } catch {
+        // Fallback local catalog already populated
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery, activeTab, isSearchOpen, assets, armedTickers]);
+
+  // Execute a 1-click Bot-Managed Trade from search bar or asset card
+  const handleBotTradeClick = async (
+    e: React.MouseEvent,
+    ticker: string,
+    direction: "AUTO" | "LONG" | "SHORT"
+  ) => {
+    e.stopPropagation();
+    const cleanTicker = ticker.trim().toUpperCase();
     if (!cleanTicker) return;
-    onAddCustomTicker(cleanTicker);
-    setCustomInput("");
+
+    const actionKey = `${cleanTicker}-${direction}`;
+    setSubmittingKey(actionKey);
+    setTradeBanner(null);
+
+    try {
+      if (onPlaceBotTrade) {
+        const resp = await onPlaceBotTrade(
+          cleanTicker,
+          direction,
+          botAllocPct > 0 ? botAllocPct : undefined
+        );
+        const statusLabel =
+          resp.status === "QUEUED"
+            ? "Queued for Market Open (Bot-Managed)"
+            : "Executed & Armed for Bot Management";
+        setTradeBanner({
+          type: "success",
+          text: `[BOT-MANAGED] ${resp.direction} ${resp.ticker} (${statusLabel}) | Target: ${resp.target_price} | Stop: ${resp.stop_price} | Size: ${resp.allocation_weight_pct}%`,
+        });
+      } else {
+        onAddCustomTicker(cleanTicker);
+        setTradeBanner({
+          type: "success",
+          text: `Added & Armed ${cleanTicker} for Autonomous Bot Trading`,
+        });
+      }
+      onSelectTicker(cleanTicker);
+      setIsSearchOpen(false);
+      window.setTimeout(() => setTradeBanner(null), 6000);
+    } catch (err) {
+      setTradeBanner({
+        type: "error",
+        text: err instanceof Error ? err.message : `Bot trade failed for ${cleanTicker}`,
+      });
+      window.setTimeout(() => setTradeBanner(null), 6000);
+    } finally {
+      setSubmittingKey(null);
+    }
+  };
+
+  // Select & Watch a stock from the search dropdown
+  const handleSelectFromSearch = (item: SearchInstrumentResult) => {
+    const tk = item.ticker.toUpperCase();
+    if (!assets[tk]) {
+      onAddCustomTicker(tk);
+    } else {
+      onSelectTicker(tk);
+    }
+    setIsSearchOpen(false);
+  };
+
+  const handleSearchFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchResults.length > 0) {
+      handleSelectFromSearch(searchResults[0]);
+    } else if (searchQuery.trim()) {
+      onAddCustomTicker(searchQuery.trim().toUpperCase());
+      setSearchQuery("");
+      setIsSearchOpen(false);
+    }
   };
 
   const assetList = Object.values(assets);
 
-  // Filter based on active tab and search filter
+  // Filter monitored cards based on active tab and search query
   const filteredAssets = assetList.filter((a) => {
-    // Search match
-    if (searchFilter && !a.ticker.toLowerCase().includes(searchFilter.toLowerCase())) {
-      return false;
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      const catEntry = FALLBACK_SEARCH_CATALOG.find(
+        (c) => c.ticker.toUpperCase() === a.ticker.toUpperCase()
+      );
+      const matchTicker = a.ticker.toLowerCase().includes(q);
+      const matchName = catEntry?.name.toLowerCase().includes(q) ?? false;
+      const matchSector = catEntry?.sector.toLowerCase().includes(q) ?? false;
+      if (!matchTicker && !matchName && !matchSector) {
+        return false;
+      }
     }
 
     if (activeTab === "ALL") return true;
@@ -70,17 +377,292 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
 
   return (
     <div className="glass-panel rounded-xl p-4 flex flex-col space-y-3">
-      {/* Top Header: Tabs & Add Custom Ticker */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-        {/* Category Tabs */}
+      {/* 1. Prominent Stock Search & 1-Click Bot-Managed Trade Bar */}
+      <div ref={searchContainerRef} className="relative z-30">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-2.5">
+          {/* Search Input Box */}
+          <form onSubmit={handleSearchFormSubmit} className="flex-1 relative">
+            <Search className="w-4 h-4 text-sky-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              aria-label="Search stocks and place bot trade"
+              placeholder="Search any stock or company to trade with Bot (e.g. Apple, NVDA, Reliance, Palantir, TSLA, BTC)... [Press /]"
+              value={searchQuery}
+              onFocus={() => setIsSearchOpen(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchOpen(true);
+              }}
+              className="w-full bg-slate-950/90 border border-sky-500/40 focus:border-sky-400 rounded-xl pl-10 pr-24 py-2.5 text-xs sm:text-sm font-mono text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.1)] transition"
+            />
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center space-x-1.5">
+              {isSearching && (
+                <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
+              )}
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-slate-900 text-slate-400 border border-slate-700 rounded">
+                  / or Ctrl+K
+                </span>
+              )}
+            </div>
+          </form>
+
+          {/* Quick Bot Sizing Selector & Instant Bot Auto-Trade on Current Selected Stock */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center space-x-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono">
+              <Bot className="w-3.5 h-3.5 text-sky-400" />
+              <span className="text-slate-400 text-[11px]">Bot Size:</span>
+              <select
+                aria-label="Bot trade allocation size"
+                value={botAllocPct}
+                onChange={(e) => setBotAllocPct(Number(e.target.value))}
+                className="bg-transparent text-sky-300 font-semibold focus:outline-none cursor-pointer text-xs"
+              >
+                <option value={0} className="bg-slate-900 text-slate-200">
+                  Kelly Auto
+                </option>
+                <option value={5} className="bg-slate-900 text-slate-200">
+                  5% Cash
+                </option>
+                <option value={10} className="bg-slate-900 text-slate-200">
+                  10% Cash
+                </option>
+                <option value={15} className="bg-slate-900 text-slate-200">
+                  15% Cash
+                </option>
+                <option value={20} className="bg-slate-900 text-slate-200">
+                  20% Cash
+                </option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              disabled={submittingKey !== null}
+              onClick={(e) =>
+                handleBotTradeClick(
+                  e,
+                  searchQuery.trim() ? searchQuery.trim().toUpperCase() : selectedTicker,
+                  "AUTO"
+                )
+              }
+              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-500/30 to-emerald-500/30 hover:from-sky-500/40 hover:to-emerald-500/40 text-sky-200 border border-sky-400/50 text-xs font-mono font-bold flex items-center shadow-[0_0_12px_rgba(56,189,248,0.2)] transition cursor-pointer"
+              title="Let the Bot analyze, pick direction, set Target & Stop-Loss barriers, and manage the trade automatically"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-emerald-300" />
+              {submittingKey?.endsWith("-AUTO")
+                ? "Bot Analyzing..."
+                : `Bot Auto-Trade ${
+                    searchQuery.trim()
+                      ? searchQuery.trim().toUpperCase()
+                      : selectedTicker
+                  }`}
+            </button>
+          </div>
+        </div>
+
+        {/* Interactive Search Dropdown with 1-Click Bot Trade Buttons */}
+        {isSearchOpen && (
+          <div className="absolute left-0 right-0 mt-2 bg-[#0b1120]/98 backdrop-blur-xl border border-sky-500/40 rounded-xl shadow-2xl overflow-hidden max-h-96 flex flex-col">
+            <div className="px-3.5 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span>
+                {searchQuery.trim()
+                  ? `Matching Stocks & Instruments for "${searchQuery.trim()}"`
+                  : "Popular Stocks & Multi-Asset Directory — Click to Analyze or Place a Bot-Handled Trade"}
+              </span>
+              <span className="text-sky-400">
+                Bot Auto-Sets Stop-Loss, Take-Profit & Trailing MTM
+              </span>
+            </div>
+
+            <div className="overflow-y-auto divide-y divide-slate-800/70">
+              {searchResults.map((item) => {
+                const isBusyAuto = submittingKey === `${item.ticker}-AUTO`;
+                const isBusyLong = submittingKey === `${item.ticker}-LONG`;
+                const isBusyShort = submittingKey === `${item.ticker}-SHORT`;
+
+                return (
+                  <div
+                    key={item.ticker}
+                    onClick={() => handleSelectFromSearch(item)}
+                    className="px-3.5 py-2.5 hover:bg-slate-900/80 transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer"
+                  >
+                    {/* Left: Symbol, Name, Exchange, Sector & Live Price/Signal */}
+                    <div className="flex items-start sm:items-center space-x-3">
+                      <span
+                        className={`w-2 h-2 rounded-full mt-1.5 sm:mt-0 shrink-0 ${
+                          item.exchange_open
+                            ? "bg-emerald-400 shadow-[0_0_6px_#34d399]"
+                            : "bg-rose-500/80"
+                        }`}
+                        title={item.exchange_open ? "Exchange Open" : "Exchange Closed (Pre-Market Queue Ready)"}
+                      />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2 font-mono">
+                          <span className="font-bold text-sm text-slate-100">
+                            {item.ticker}
+                          </span>
+                          <span className="text-xs text-slate-300 font-sans font-medium">
+                            {item.name}
+                          </span>
+                          <span className="px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-sky-300 border border-slate-700">
+                            {item.exchange}
+                          </span>
+                          <span className="text-[10px] text-slate-500 hidden md:inline">
+                            {item.sector}
+                          </span>
+                          {item.is_armed && (
+                            <span className="px-1.5 py-0.5 text-[10px] rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                              ARMED
+                            </span>
+                          )}
+                          {item.has_open_position && (
+                            <span className="px-1.5 py-0.5 text-[10px] rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              OPEN POS
+                            </span>
+                          )}
+                        </div>
+
+                        {item.current_price !== null && (
+                          <div className="mt-0.5 flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-400">
+                            <span>
+                              Price:{" "}
+                              <strong className="text-slate-200">
+                                {item.current_price.toFixed(item.decimals)}
+                              </strong>
+                            </span>
+                            {item.signal && (
+                              <span>
+                                AI Signal:{" "}
+                                <strong
+                                  className={
+                                    item.primary_direction && item.primary_direction >= 0
+                                      ? "text-emerald-400"
+                                      : "text-rose-400"
+                                  }
+                                >
+                                  {item.signal} ({item.confidence_pct}%)
+                                </strong>
+                              </span>
+                            )}
+                            {item.target_price && item.stop_price && (
+                              <span className="text-slate-500">
+                                Bot Barriers: TP {item.target_price.toFixed(item.decimals)} / SL{" "}
+                                {item.stop_price.toFixed(item.decimals)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: 1-Click Bot-Handled Trade Action Buttons */}
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      <button
+                        type="button"
+                        disabled={submittingKey !== null}
+                        onClick={(e) => handleBotTradeClick(e, item.ticker, "AUTO")}
+                        className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 text-sky-300 border border-sky-500/40 text-[11px] font-mono font-semibold flex items-center transition"
+                        title="Bot analyzes stock, selects AI direction & Kelly size, and manages TP/SL automatically"
+                      >
+                        <Bot className="w-3 h-3 mr-1 text-sky-400" />
+                        {isBusyAuto ? "Trading..." : "Bot Auto-Trade"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={submittingKey !== null}
+                        onClick={(e) => handleBotTradeClick(e, item.ticker, "LONG")}
+                        className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 text-[11px] font-mono font-semibold flex items-center transition"
+                        title="Open LONG position — Bot automatically computes & manages Stop-Loss and Take-Profit"
+                      >
+                        <ArrowUpRight className="w-3 h-3 mr-0.5" />
+                        {isBusyLong ? "..." : "Bot LONG"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={submittingKey !== null}
+                        onClick={(e) => handleBotTradeClick(e, item.ticker, "SHORT")}
+                        className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[11px] font-mono font-semibold flex items-center transition"
+                        title="Open SHORT position — Bot automatically computes & manages Stop-Loss and Take-Profit"
+                      >
+                        <ArrowDownRight className="w-3 h-3 mr-0.5" />
+                        {isBusyShort ? "..." : "Bot SHORT"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onAddCustomTicker(item.ticker.toUpperCase());
+                          setIsSearchOpen(false);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-mono flex items-center transition"
+                        title="Add to watchlist & arm Bot without opening immediate trade"
+                      >
+                        <Plus className="w-3 h-3 mr-0.5" />
+                        Watch
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Feedback Banner for Bot-Managed Trade Execution */}
+      {tradeBanner && (
+        <div
+          className={`px-3 py-2 rounded-lg text-xs font-mono flex items-center justify-between ${
+            tradeBanner.type === "success"
+              ? "bg-emerald-500/15 border border-emerald-500/40 text-emerald-200"
+              : "bg-rose-500/15 border border-rose-500/40 text-rose-200"
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            {tradeBanner.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{tradeBanner.text}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTradeBanner(null)}
+            className="text-slate-400 hover:text-slate-200 ml-2"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 2. Category Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
         <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
           {(
             [
               { id: "ALL", label: "All Monitored" },
-              { id: "NSE", label: "Indian Equities (NSE)" },
               { id: "US", label: "US Equities" },
-              { id: "COMMODITY", label: "Commodities" },
+              { id: "NSE", label: "Indian Equities (NSE)" },
               { id: "CRYPTO", label: "Crypto 24/7" },
+              { id: "COMMODITY", label: "Commodities" },
               { id: "FOREX", label: "Forex" },
             ] as const
           ).map((tab) => (
@@ -98,41 +680,14 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
           ))}
         </div>
 
-        {/* Custom Symbol Form */}
-        <div className="flex items-center gap-2">
-          {/* Quick Filter */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Filter..."
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              className="bg-slate-950/80 border border-slate-800 rounded-lg pl-8 pr-2.5 py-1 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500/50 w-28 sm:w-32"
-            />
-          </div>
-
-          <form onSubmit={handleAddCustom} className="flex items-center gap-1.5">
-            <input
-              type="text"
-              placeholder="Ticker e.g. TSLA, TATAMOTORS.NS"
-              value={customInput}
-              onChange={(e) => setCustomInput(e.target.value)}
-              className="bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500/50 w-44"
-            />
-            <button
-              type="submit"
-              className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 border border-sky-500/40 text-xs font-mono flex items-center transition"
-            >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              Add
-            </button>
-          </form>
-        </div>
+        <span className="text-[11px] font-mono text-slate-400">
+          Monitored: <strong className="text-slate-200">{assetList.length}</strong> • Armed for Auto-Bot:{" "}
+          <strong className="text-sky-400">{armedTickers.length}</strong>
+        </span>
       </div>
 
-      {/* Asset Cards Horizontal Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 max-h-48 overflow-y-auto pr-1">
+      {/* 3. Monitored Asset Cards Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 max-h-52 overflow-y-auto pr-1">
         {filteredAssets.map((asset) => {
           const isSelected = selectedTicker === asset.ticker;
           const isArmed = armedTickers.includes(asset.ticker);
@@ -195,13 +750,25 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
                 </span>
               </div>
 
-              <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>{asset.regime?.substring(0, 10) || "REGIME"}</span>
-                {asset.has_open_position && (
-                  <span className="text-amber-400 font-semibold px-1 rounded bg-amber-500/10">
-                    POS
-                  </span>
-                )}
+              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                <span className="truncate max-w-[75px]">
+                  {asset.regime?.substring(0, 10) || "REGIME"}
+                </span>
+                <div className="flex items-center space-x-1">
+                  {asset.has_open_position && (
+                    <span className="text-amber-400 font-semibold px-1 rounded bg-amber-500/10">
+                      POS
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => handleBotTradeClick(e, asset.ticker, "AUTO")}
+                    className="px-1.5 py-0.5 rounded bg-sky-500/15 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-[9px] font-mono font-semibold transition"
+                    title={`Let Bot place & manage trade on ${asset.ticker}`}
+                  >
+                    Bot Trade
+                  </button>
+                </div>
               </div>
             </div>
           );

@@ -226,11 +226,16 @@ class TestAccountCashResolution:
         assert s1["reserved_cash"] == pytest.approx(alloc1, abs=0.01)
         assert s1["available_cash"] == pytest.approx(avail_cash_0 - alloc1, abs=0.01)
 
-        # Queue Order 2 on closed market RELIANCE.NS ($15,000)
-        r2 = client.post(
-            "/api/dashboard/order",
-            json={"ticker": "RELIANCE.NS", "direction": "LONG", "allocation_weight_pct": 15.0, "order_type": "LIMIT", "limit_price": 2800.0},
-        )
+        # Queue Order 2 on closed market AAPL ($15,000)
+        orig_is_tradable = bot._is_ticker_tradable_now
+        bot._is_ticker_tradable_now = lambda tk: (False, {"is_open": False, "exchange": "Closed", "schedule": "", "local_clock": "", "reason": "Closed", "next_state_time_utc": "2026-11-06T09:15:00Z"})
+        try:
+            r2 = client.post(
+                "/api/dashboard/order",
+                json={"ticker": "RELIANCE.NS", "direction": "LONG", "allocation_weight_pct": 15.0, "order_type": "LIMIT", "limit_price": 2800.0},
+            )
+        finally:
+            bot._is_ticker_tradable_now = orig_is_tradable
         assert r2.status_code == 200
         o2 = r2.json()["order"]
         alloc2 = o2["allocated_capital"]

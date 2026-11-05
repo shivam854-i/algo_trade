@@ -304,6 +304,49 @@ class TestAdversarialPriceTickFreezing:
         bot.base_prices["NVDA"] = 120.0
         bot.price_series["NVDA"] = [{"time": "T-0", "price": 120.0, "high": 121.0, "low": 119.0}]
 
+        from src.data.provider_base import BaseMarketDataProvider, LiveQuote
+        import pandas as pd
+
+        class _MockSteppedFeed(BaseMarketDataProvider):
+            def __init__(self, initial_prices):
+                self._prices = dict(initial_prices)
+                self._rng = np.random.default_rng(42)
+
+            def fetch_historical_ohlcv(self, ticker, period="1y", interval="1d"):
+                return pd.DataFrame()
+
+            def get_quote(self, ticker, market_open=True):
+                tk = ticker.upper()
+                p = self._prices.get(tk, 100.0)
+                step = float(self._rng.normal(0.0005, 0.0025))
+                new_p = max(0.0001, p * (1.0 + step))
+                self._prices[tk] = new_p
+                now_iso = datetime.now(timezone.utc).isoformat()
+                return LiveQuote(
+                    ticker=tk,
+                    last_price=round(new_p, 4),
+                    bid_price=round(new_p * 0.9998, 4),
+                    ask_price=round(new_p * 1.0002, 4),
+                    volume=1000.0,
+                    timestamp_utc=now_iso,
+                    received_at_utc=now_iso,
+                    is_delayed=False,
+                    delay_minutes=0,
+                    is_stale=False,
+                    age_seconds=0.1,
+                    latency_ms=1.0,
+                    provider_name="MockSteppedFeed",
+                    day_open=p,
+                    day_high=max(p, new_p),
+                    day_low=min(p, new_p),
+                    prev_close=p,
+                    status="LIVE",
+                )
+
+            def is_realtime(self) -> bool:
+                return True
+
+        bot.data_provider = _MockSteppedFeed({"BTC-USD": 65000.0, "RELIANCE.NS": 2850.0, "NVDA": 120.0})
         bot._initialized = True
         return bot
 
@@ -617,6 +660,29 @@ class TestLiveBotOpenTransitionIntegration:
         bot.live_prices["RELIANCE.NS"] = 2800.0
         bot.base_prices["RELIANCE.NS"] = 2800.0
         bot.price_series["RELIANCE.NS"] = [{"time": "T-0", "price": 2800.0, "high": 2810.0, "low": 2790.0}]
+
+        from src.data.provider_base import BaseMarketDataProvider, LiveQuote
+        class _MockRelianceOpenFeed(BaseMarketDataProvider):
+            def get_quote(self, ticker, market_open=True, **kwargs):
+                now_iso = datetime.now(timezone.utc).isoformat()
+                return LiveQuote(
+                    ticker=ticker.upper(),
+                    last_price=2810.0,
+                    bid_price=2809.5,
+                    ask_price=2810.5,
+                    timestamp_utc=now_iso,
+                    received_at_utc=now_iso,
+                    is_delayed=False,
+                    is_stale=False,
+                    provider_name="MockRelianceOpenFeed",
+                    day_open=2805.0,
+                    day_high=2815.0,
+                    day_low=2800.0,
+                    prev_close=2800.0,
+                    status="LIVE",
+                )
+
+        bot.data_provider = _MockRelianceOpenFeed()
         bot._initialized = True
 
         # 1. Queue pre-market order while market is closed with explicit TP/SL

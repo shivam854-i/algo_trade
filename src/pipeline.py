@@ -4,11 +4,20 @@ Orchestrates data ingestion, fractional feature engineering, causal forward-filt
 HMM regime classification, purged High/Low triple-barrier meta-labeling,
 supervised Pinball-Loss Causal TCN sequence forecasting, volatility cone projections,
 and CVaR-constrained asymmetric Kelly risk governance.
+
+Live-Market Compatibility & Anti-Leakage Guarantees:
+- Supports point-in-time `as_of_timestamp` filtering prior to feature extraction,
+  Fractional Differentiation, HMM forward filtering, LightGBM meta-labeling, and
+  Causal TCN sequence fitting, preventing look-ahead bias and data leakage.
+- Supports direct injection of `ohlcv_df` or `BaseMarketDataProvider` bars, and
+  live quote re-anchoring (`refresh_with_live_quote`) so barrier prices, volatility
+  cones, friction hurdles, and drawdown guardrails reflect genuine market prices.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 import logging
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
@@ -44,6 +53,7 @@ class SingleAssetAnalysis:
     features_df: pd.DataFrame
     neural_prob: float = 0.50
     hardware_accelerator: str = "CPU"
+    prediction_timestamp_utc: str = ""
 
 
 @dataclass
@@ -63,8 +73,10 @@ class MarketPredictionEngine:
         kelly_fraction: float = 0.30,
         target_vol: float = 0.15,
         current_drawdown: float = 0.0,
+        data_provider: Optional[Any] = None,
     ):
         self.downloader = MarketDataDownloader(cache_dir=cache_dir)
+        self.data_provider = data_provider
         self.normalizer = MarketDataNormalizer()
         self.fracdiff = FractionalDifferentiator()
         self.tech_pipeline = TechnicalFeaturePipeline()
@@ -77,18 +89,61 @@ class MarketPredictionEngine:
         )
         self.current_drawdown = current_drawdown
 
+    @staticmethod
+    def _enforce_point_in_time_cutoff(
+        df: pd.DataFrame, as_of_timestamp: Optional[datetime]
+    ) -> pd.DataFrame:
+        """Strictly filters OHLCV DataFrame up to `as_of_timestamp` to prevent look-ahead bias."""
+        if df.empty or as_of_timestamp is None:
+            return df
+        ts_utc = (
+            as_of_timestamp.astimezone(timezone.utc)
+            if as_of_timestamp.tzinfo is not None
+            else as_of_timestamp.replace(tzinfo=timezone.utc)
+        )
+        idx = df.index
+        if getattr(idx, "tz", None) is None:
+            idx_utc = idx.tz_localize("UTC")
+            return df.loc[idx_utc <= ts_utc].copy()
+        return df.loc[idx.tz_convert("UTC") <= ts_utc].copy()
+
     def analyze_ticker(
         self,
         ticker: str,
         period: str = "2y",
         interval: str = "1d",
         force_refresh: bool = False,
+        as_of_timestamp: Optional[datetime] = None,
+        ohlcv_df: Optional[pd.DataFrame] = None,
+        df_override: Optional[pd.DataFrame] = None,
+        live_price: Optional[float] = None,
     ) -> Optional[SingleAssetAnalysis]:
         """Runs full end-to-end analytical and predictive pipeline for a single ticker."""
-        # 1. Download
-        df_raw = self.downloader.download_ticker(
-            ticker, period=period, interval=interval, force_refresh=force_refresh
-        )
+        # 1. Acquire OHLCV data from explicit DataFrame, configured provider, or downloader
+        if df_override is not None and ohlcv_df is None:
+            ohlcv_df = df_override
+        if ohlcv_df is not None and not ohlcv_df.empty:
+            df_raw = ohlcv_df.copy()
+        elif self.data_provider is not None and not force_refresh:
+            try:
+                df_raw = self.data_provider.get_historical_bars(
+                    ticker, interval=interval, lookback_bars=500, end_time=as_of_timestamp
+                )
+            except Exception as e:
+                logger.warning(f"Provider bar fetch failed for {ticker}, using downloader: {e}")
+                df_raw = pd.DataFrame()
+            if df_raw.empty:
+                df_raw = self.downloader.download_ticker(
+                    ticker, period=period, interval=interval, force_refresh=force_refresh
+                )
+        else:
+            df_raw = self.downloader.download_ticker(
+                ticker, period=period, interval=interval, force_refresh=force_refresh
+            )
+
+        # Enforce strict causal cutoff at as_of_timestamp before any processing
+        df_raw = self._enforce_point_in_time_cutoff(df_raw, as_of_timestamp)
+
         if df_raw.empty or len(df_raw) < 40:
             logger.error(
                 f"Insufficient data points for {ticker} ({len(df_raw)} rows)."
@@ -97,8 +152,27 @@ class MarketPredictionEngine:
 
         # 2. Clean & Normalize
         df_clean = self.normalizer.clean_ohlcv(df_raw)
-        current_price = float(df_clean["Close"].iloc[-1])
+        if df_clean.empty or len(df_clean) < 40:
+            logger.error(f"Insufficient clean data points for {ticker} ({len(df_clean)} rows).")
+            return None
+
+        current_price = (
+            float(live_price)
+            if (live_price is not None and np.isfinite(live_price) and live_price > 0)
+            else float(df_clean["Close"].iloc[-1])
+        )
         market_type = self.downloader.get_market_type(ticker)
+
+        last_idx = df_clean.index[-1]
+        if isinstance(last_idx, pd.Timestamp):
+            dt_last = last_idx.to_pydatetime()
+            pred_ts_str = (
+                dt_last.astimezone(timezone.utc).isoformat()
+                if dt_last.tzinfo
+                else dt_last.replace(tzinfo=timezone.utc).isoformat()
+            )
+        else:
+            pred_ts_str = datetime.now(timezone.utc).isoformat()
 
         # 3. Memory Preservation: Fractional Differentiation (d*)
         d_opt, s_fracdiff = self.fracdiff.find_min_d(df_clean["Close"])
@@ -115,6 +189,14 @@ class MarketPredictionEngine:
 
         # 6. Two-Stage Meta-Labeling Prediction (Purged High/Low Tabular Causal Model)
         meta_pred = self.meta_engine.train_and_predict(feats, df_clean)
+
+        # If a genuine live quote price was supplied, re-anchor target/stop barriers to live_price
+        if live_price is not None and live_price > 0 and float(df_clean["Close"].iloc[-1]) > 0:
+            hist_close = float(df_clean["Close"].iloc[-1])
+            scale = current_price / hist_close
+            decimals = 4 if market_type == "FOREX" else 2
+            meta_pred.target_price = round(float(meta_pred.target_price * scale), decimals)
+            meta_pred.stop_price = round(float(meta_pred.stop_price * scale), decimals)
 
         # 7. Supervised Pinball-Loss Causal TCN Sequence Forecaster
         self.neural_forecaster.fit(df_clean, epochs=10)
@@ -220,6 +302,82 @@ class MarketPredictionEngine:
             features_df=feats.tail(150),
             neural_prob=neural_prob,
             hardware_accelerator=hardware_accel,
+            prediction_timestamp_utc=pred_ts_str,
+        )
+
+    def refresh_with_live_quote(
+        self,
+        analysis: SingleAssetAnalysis,
+        live_price: object,
+        current_drawdown: Optional[float] = None,
+        quote_timestamp_utc: Optional[str] = None,
+    ) -> SingleAssetAnalysis:
+        """Re-anchors an existing SingleAssetAnalysis to a genuine live market price or LiveQuote.
+
+        Updates barriers, volatility cone, statutory friction hurdle, and Kelly risk
+        sizing against current portfolio drawdown without leaking future bars.
+        """
+        if hasattr(live_price, "last_price"):
+            price_val = float(getattr(live_price, "last_price", 0.0))
+            if quote_timestamp_utc is None:
+                quote_timestamp_utc = str(getattr(live_price, "timestamp_utc", ""))
+        else:
+            price_val = float(live_price)  # type: ignore[arg-type]
+
+        if not np.isfinite(price_val) or price_val <= 0:
+            return analysis
+
+        decimals = 4 if getattr(analysis, "market_jurisdiction", "") == "FOREX" else 2
+        if not isinstance(analysis, SingleAssetAnalysis):
+            analysis.current_price = round(float(price_val), decimals)
+            return analysis
+
+        dd = self.current_drawdown if current_drawdown is None else float(current_drawdown)
+        prev_ref = analysis.current_price if analysis.current_price > 0 else price_val
+        scale = price_val / prev_ref
+
+        new_target = round(float(analysis.meta_prediction.target_price * scale), decimals)
+        new_stop = round(float(analysis.meta_prediction.stop_price * scale), decimals)
+
+        updated_meta = replace(
+            analysis.meta_prediction,
+            target_price=new_target,
+            stop_price=new_stop,
+        )
+
+        gross_alpha_pct = abs((new_target - price_val) / price_val * 100.0)
+        passes_hurdle, friction_cost, net_alpha = FrictionEvaluator.validate_alpha_hurdle(
+            analysis.ticker,
+            gross_alpha_pct,
+            is_intraday=False,
+            reference_price=price_val,
+        )
+
+        payoff_b = getattr(self.meta_engine, "payoff_ratio_b", 1.5)
+        risk_decision = self.guardrail.evaluate_allocation(
+            current_drawdown=dd,
+            model_bet_size=updated_meta.bet_size,
+            realized_annual_vol=analysis.volatility_cone.expected_vol_annualized,
+            win_probability=updated_meta.success_probability,
+            payoff_ratio_b=payoff_b,
+        )
+        if not passes_hurdle:
+            risk_decision.authorized = False
+            risk_decision.authorized_weight_pct = 0.0
+            risk_decision.status_message = (
+                f"REJECTED: Gross alpha ({gross_alpha_pct:.2f}%) fails 1.5x hurdle over "
+                f"friction + slippage costs ({friction_cost:.2f}%)."
+            )
+
+        return replace(
+            analysis,
+            current_price=round(float(price_val), decimals),
+            meta_prediction=updated_meta,
+            friction_hurdle_passes=passes_hurdle,
+            friction_cost_pct=friction_cost,
+            net_expected_alpha_pct=net_alpha,
+            risk_decision=risk_decision,
+            prediction_timestamp_utc=quote_timestamp_utc or analysis.prediction_timestamp_utc,
         )
 
     def analyze_portfolio(
@@ -228,12 +386,17 @@ class MarketPredictionEngine:
         period: str = "2y",
         interval: str = "1d",
         force_refresh: bool = False,
+        as_of_timestamp: Optional[datetime] = None,
     ) -> MultiAssetAnalysis:
         """Analyzes a multi-ticker portfolio and computes Marchenko-Pastur + Ward HRP allocations."""
         single_results = {}
         for t in tickers:
             res = self.analyze_ticker(
-                t, period=period, interval=interval, force_refresh=force_refresh
+                t,
+                period=period,
+                interval=interval,
+                force_refresh=force_refresh,
+                as_of_timestamp=as_of_timestamp,
             )
             if res is not None:
                 single_results[t.upper()] = res

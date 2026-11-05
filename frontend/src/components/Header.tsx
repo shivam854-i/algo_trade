@@ -4,13 +4,16 @@ import {
   Cpu,
   Eye,
   EyeOff,
+  Radio,
   RefreshCw,
   Server,
+  ShieldCheck,
 } from "lucide-react";
-import { BotStatus } from "../types";
+import { BotStatus, DataFeedStatus } from "../types";
 
 interface HeaderProps {
   botStatus?: BotStatus;
+  dataFeedStatus?: DataFeedStatus;
   isTabVisible: boolean;
   isLoading: boolean;
   onRefresh: () => void;
@@ -18,10 +21,19 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   botStatus,
+  dataFeedStatus,
   isTabVisible,
   isLoading,
   onRefresh,
 }) => {
+  const dataMode =
+    dataFeedStatus?.data_mode ??
+    botStatus?.data_mode ??
+    (botStatus?.simulation_mode ? "SANDBOX_SIMULATION" : "LIVE_MARKET_DATA");
+  const isSandbox = dataMode === "SANDBOX_SIMULATION" || Boolean(botStatus?.simulation_mode);
+  const hasStale = (dataFeedStatus?.stale_tickers?.length ?? 0) > 0;
+  const latencyMs = dataFeedStatus?.average_latency_ms ?? 0;
+
   return (
     <header className="glass-panel border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-4">
       {/* Brand & Title */}
@@ -39,13 +51,48 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-slate-400 font-mono">
-            Autonomous Neuro-Causal Quant Execution Engine
+            Autonomous Neuro-Causal Quant Paper-Trading Engine
           </p>
         </div>
       </div>
 
       {/* Telemetry & System Badges */}
       <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono">
+        {/* Paper Trading Safety Lock Badge */}
+        <div
+          className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 flex items-center space-x-1.5 font-semibold"
+          title="Strict Paper-Trading Mode: Virtual $100,000 balance. Real brokerage order submission is permanently disabled."
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+          <span>PAPER TRADING • VIRTUAL ACCOUNT</span>
+        </div>
+
+        {/* Market Data Feed Mode & Connection Health Badge */}
+        <div
+          className={`px-2.5 py-1 rounded-lg border flex items-center space-x-1.5 ${
+            isSandbox
+              ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+              : hasStale
+              ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
+              : "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+          }`}
+          title={`Feed Provider: ${dataFeedStatus?.active_us_provider || dataFeedStatus?.provider || "Market Feed"}`}
+        >
+          <Radio className="w-3.5 h-3.5" />
+          <span>
+            {isSandbox
+              ? "SANDBOX SIMULATION"
+              : hasStale
+              ? `FEED STALE (${dataFeedStatus?.stale_tickers?.join(",")})`
+              : dataMode === "LIVE_MARKET_DATA"
+              ? "LIVE MARKET DATA"
+              : "DELAYED MARKET DATA"}
+          </span>
+          {latencyMs > 0 && !isSandbox && (
+            <span className="text-[10px] opacity-80">({latencyMs.toFixed(0)}ms)</span>
+          )}
+        </div>
+
         {/* Tab Visibility / Memory Protection Badge */}
         <div
           className={`px-2.5 py-1 rounded-lg border flex items-center space-x-1.5 ${

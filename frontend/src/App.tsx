@@ -30,6 +30,7 @@ export const App: React.FC = () => {
     resetAccount,
     armTickers,
     placeOrder,
+    placeBotTrade,
     cancelPendingOrder,
   } = useDashboardStream({ pollIntervalMs: 2500, chartCapacity: 500, logCapacity: 100 });
 
@@ -59,6 +60,7 @@ export const App: React.FC = () => {
       {/* 1. Institutional Cockpit Top Navbar */}
       <Header
         botStatus={state?.bot_status}
+        dataFeedStatus={state?.data_feed_status}
         isTabVisible={isTabVisible}
         isLoading={isLoading}
         onRefresh={refreshState}
@@ -104,6 +106,7 @@ export const App: React.FC = () => {
             armedTickers={armedTickers}
             onToggleArm={handleToggleArm}
             onAddCustomTicker={handleAddCustomTicker}
+            onPlaceBotTrade={placeBotTrade}
           />
         </section>
 
@@ -132,6 +135,7 @@ export const App: React.FC = () => {
             {/* Order Controls & Pre-Market Pending Queue */}
             <OrderControls
               selectedTicker={selectedTicker}
+              selectedAsset={selectedAsset}
               botStatus={state?.bot_status}
               availableCash={
                 state?.account?.available_cash ??
@@ -142,6 +146,7 @@ export const App: React.FC = () => {
               currentPrice={selectedAsset?.current_price ?? 0}
               pendingOrders={pendingOrders}
               onPlaceOrder={placeOrder}
+              onPlaceBotTrade={placeBotTrade}
               onCancelPendingOrder={cancelPendingOrder}
               onToggleBot={toggleBot}
               onToggleMarketHours={toggleMarketHours}

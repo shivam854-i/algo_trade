@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DashboardState, LogItem, PendingOrder, PricePoint } from "../types";
+import { BotTradeResponse, DashboardState, LogItem, PendingOrder, PricePoint } from "../types";
 import { RingBuffer } from "../utils/ringBuffer";
 import { usePageVisibility } from "./usePageVisibility";
 
@@ -31,13 +31,22 @@ export interface UseDashboardStreamResult {
   armTickers: (tickers: string[], addTickers?: string[]) => Promise<void>;
   placeOrder: (
     ticker: string,
-    direction: "LONG" | "SHORT",
+    direction: "LONG" | "SHORT" | "AUTO",
     allocWeight?: number,
     orderType?: "MARKET" | "LIMIT",
     limitPrice?: number,
     targetPrice?: number,
     stopPrice?: number
   ) => Promise<void>;
+  placeBotTrade: (
+    ticker: string,
+    direction?: "AUTO" | "LONG" | "SHORT",
+    allocWeight?: number,
+    orderType?: "MARKET" | "LIMIT",
+    limitPrice?: number,
+    targetPrice?: number,
+    stopPrice?: number
+  ) => Promise<BotTradeResponse>;
   cancelPendingOrder: (orderId: string) => Promise<void>;
 }
 
@@ -49,7 +58,7 @@ export function useDashboardStream({
   const [state, setState] = useState<DashboardState | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTicker, setSelectedTicker] = useState<string>("BTC-USD");
+  const [selectedTicker, setSelectedTicker] = useState<string>("NVDA");
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
   const [chartData, setChartData] = useState<PricePoint[]>([]);
   const [boundedActivityLog, setBoundedActivityLog] = useState<LogItem[]>([]);
@@ -129,7 +138,15 @@ export function useDashboardStream({
       const data: DashboardState = await res.json();
       setState(data);
       setError(null);
-      ingestStateIntoBuffers(data, selectedTicker);
+      let activeTk = selectedTicker;
+      if (data.assets && !data.assets[activeTk]) {
+        const firstAvailable = Object.keys(data.assets)[0];
+        if (firstAvailable) {
+          activeTk = firstAvailable;
+          setSelectedTicker(firstAvailable);
+        }
+      }
+      ingestStateIntoBuffers(data, activeTk);
       fetchPendingOrders();
     } catch (err) {
       console.warn("Failed to fetch dashboard state:", err);
@@ -310,7 +327,7 @@ export function useDashboardStream({
   const placeOrder = useCallback(
     async (
       ticker: string,
-      direction: "LONG" | "SHORT",
+      direction: "LONG" | "SHORT" | "AUTO",
       allocWeight = 10,
       orderType: "MARKET" | "LIMIT" = "MARKET",
       limitPrice?: number,
@@ -335,16 +352,62 @@ export function useDashboardStream({
           const errData = await res.json().catch(() => ({}));
           throw new Error(errData.detail || "Failed to place order");
         }
-        const data: DashboardState = await res.json();
-        setState(data);
-        ingestStateIntoBuffers(data, selectedTicker);
+        const payload = await res.json();
+        const dashState: DashboardState = payload.dashboard_state ? payload.dashboard_state : payload;
+        setState(dashState);
+        setSelectedTicker(ticker.toUpperCase());
+        ingestStateIntoBuffers(dashState, ticker.toUpperCase());
         fetchPendingOrders();
       } catch (err) {
         console.error("Order error:", err);
         throw err;
       }
     },
-    [selectedTicker, ingestStateIntoBuffers, fetchPendingOrders]
+    [ingestStateIntoBuffers, fetchPendingOrders]
+  );
+
+  // Action: Place Bot-Managed Trade (Search & 1-Click Bot Execution)
+  const placeBotTrade = useCallback(
+    async (
+      ticker: string,
+      direction: "AUTO" | "LONG" | "SHORT" = "AUTO",
+      allocWeight?: number,
+      orderType: "MARKET" | "LIMIT" = "MARKET",
+      limitPrice?: number,
+      targetPrice?: number,
+      stopPrice?: number
+    ): Promise<BotTradeResponse> => {
+      const res = await fetch("/api/dashboard/bot-trade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker,
+          direction,
+          allocation_weight_pct: allocWeight,
+          order_type: orderType,
+          limit_price: limitPrice,
+          target_price: targetPrice,
+          stop_price: stopPrice,
+          auto_arm: true,
+          execution_mode: "PAPER",
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `Failed to place bot trade for ${ticker}`);
+      }
+      const payload: BotTradeResponse = await res.json();
+      if (payload.dashboard_state) {
+        setState(payload.dashboard_state);
+        setSelectedTicker(payload.ticker);
+        ingestStateIntoBuffers(payload.dashboard_state, payload.ticker);
+      } else {
+        await fetchState();
+      }
+      fetchPendingOrders();
+      return payload;
+    },
+    [ingestStateIntoBuffers, fetchPendingOrders, fetchState]
   );
 
   // Action: Cancel Pending Order
@@ -385,6 +448,7 @@ export function useDashboardStream({
     resetAccount,
     armTickers,
     placeOrder,
+    placeBotTrade,
     cancelPendingOrder,
   };
 }

@@ -220,8 +220,36 @@ export const ChartContainer: React.FC<ChartContainerProps> = ({
                 {movePct.toFixed(2)}%
               </span>
             </div>
-            <div className="text-[11px] text-slate-400">
-              {asset?.exchange_name || "Exchange"} • {asset?.exchange_clock || "Live"}
+            <div className="text-[11px] text-slate-400 font-mono flex flex-wrap items-center gap-2">
+              <span>{asset?.exchange_name || "Exchange"} • {asset?.exchange_clock || "Live"}</span>
+              {asset?.bid_price && asset?.ask_price ? (
+                <span className="text-slate-300">
+                  • Bid: <span className="text-emerald-400">{asset.bid_price.toFixed(decimals)}</span> / Ask: <span className="text-rose-400">{asset.ask_price.toFixed(decimals)}</span>
+                  {asset.spread_bps !== undefined && (
+                    <span className="text-slate-500"> ({asset.spread_bps.toFixed(1)} bps)</span>
+                  )}
+                </span>
+              ) : null}
+              {asset?.feed_status && (
+                <span
+                  className={`px-1.5 py-0.2 rounded text-[10px] border ${
+                    asset.feed_status === "SANDBOX"
+                      ? "bg-amber-500/15 border-amber-500/30 text-amber-300"
+                      : asset.is_stale
+                      ? "bg-rose-500/15 border-rose-500/30 text-rose-300"
+                      : "bg-sky-500/15 border-sky-500/30 text-sky-300"
+                  }`}
+                >
+                  {asset.feed_status === "SANDBOX"
+                    ? "SANDBOX SIMULATED"
+                    : asset.is_stale
+                    ? "STALE QUOTE"
+                    : asset.is_delayed
+                    ? `DELAYED (${asset.delay_minutes ?? 15}m)`
+                    : "LIVE QUOTE"}
+                  {asset.latency_ms ? ` • ${asset.latency_ms.toFixed(0)}ms` : ""}
+                </span>
+              )}
             </div>
           </div>
         </div>

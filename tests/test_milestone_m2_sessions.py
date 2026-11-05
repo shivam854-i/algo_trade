@@ -192,11 +192,17 @@ def test_server_m2_endpoints():
     assert r_sim2.json()["bot_status"]["simulation_mode"] is False
 
     # 3. Queue off-hours order via /api/dashboard/order
-    r_ord = client.post("/api/dashboard/order", json={
-        "ticker": "RELIANCE.NS",
-        "direction": "LONG",
-        "allocation_weight_pct": 10.0,
-    })
+    bot = _get_live_bot()
+    orig_tradable = bot._is_ticker_tradable_now
+    bot._is_ticker_tradable_now = lambda tk: (False, {"is_open": False, "exchange": "NSE", "schedule": "09:15-15:30", "local_clock": "20:00 IST", "reason": "Closed", "next_state_time_utc": "2026-11-06T03:45:00Z"})
+    try:
+        r_ord = client.post("/api/dashboard/order", json={
+            "ticker": "RELIANCE.NS",
+            "direction": "LONG",
+            "allocation_weight_pct": 10.0,
+        })
+    finally:
+        bot._is_ticker_tradable_now = orig_tradable
     assert r_ord.status_code == 200
     ord_data = r_ord.json()
     assert ord_data.get("status") == "QUEUED"

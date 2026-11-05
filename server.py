@@ -10,10 +10,10 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Union
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +25,7 @@ from src.execution.auth import AuthManager, UserTierProfile
 from src.execution.broker import PaperBroker
 from src.execution.frictions import FrictionEvaluator
 from src.execution.live_bot import LiveBotController
+from src.execution.session_manager import SessionManager, SessionStatus
 from src.pipeline import MarketPredictionEngine
 
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +39,14 @@ broker_engine = PaperBroker()
 engine: Optional[MarketPredictionEngine] = None
 backtest_engine: Optional[BacktestEngine] = None
 live_bot: Optional[LiveBotController] = None
+session_manager: Optional[SessionManager] = None
+
+
+def _get_session_manager() -> SessionManager:
+    global session_manager, broker_engine
+    if session_manager is None:
+        session_manager = SessionManager(ledger=broker_engine.ledger)
+    return session_manager
 
 
 @asynccontextmanager
@@ -85,6 +94,7 @@ class OrderRequest(BaseModel):
     limit_price: Optional[float] = Field(default=None, description="Limit price for LIMIT orders")
     target_price: Optional[float] = Field(default=None, description="Custom target price (optional)")
     stop_price: Optional[float] = Field(default=None, description="Custom stop price (optional)")
+    execution_mode: Optional[str] = Field(default="PAPER", description="Must be PAPER; live brokerage mode is forbidden")
 
 
 class WebhookAlertRequest(BaseModel):
@@ -140,7 +150,8 @@ def _get_live_bot() -> LiveBotController:
     if engine is None:
         engine = MarketPredictionEngine()
     if live_bot is None:
-        live_bot = LiveBotController(engine=engine, broker=broker_engine)
+        mgr = _get_session_manager()
+        live_bot = LiveBotController(engine=engine, broker=broker_engine, session_manager=mgr)
         live_bot.initialize_market_state()
     return live_bot
 
@@ -500,7 +511,13 @@ def get_broker_positions(user: UserTierProfile = Depends(get_current_user)):
 def submit_broker_order(
     req: OrderRequest, user: UserTierProfile = Depends(get_current_user)
 ):
-    """Executes a new market order, allocating capital with exact friction deduction."""
+    """Executes a new virtual paper order, allocating virtual capital with exact friction deduction."""
+    if req.execution_mode and req.execution_mode.upper() not in ("PAPER", "VIRTUAL", "VIRTUAL_PAPER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
+        )
+
     global engine
     if engine is None:
         engine = MarketPredictionEngine()
@@ -681,6 +698,24 @@ class AssetSelectionRequest(BaseModel):
     add_custom_tickers: Optional[List[str]] = Field(default=None, description="Optional new symbols to load into terminal")
 
 
+class BotTradeRequest(BaseModel):
+    ticker: str = Field(..., description="Stock or asset symbol to analyze and trade, e.g. NVDA, AAPL, RELIANCE.NS")
+    direction: str = Field(
+        default="AUTO",
+        description="AUTO (use Bot AI signal), LONG, or SHORT. In all modes, Bot manages Target, Stop-Loss & MTM.",
+    )
+    allocation_weight_pct: Optional[float] = Field(
+        default=None,
+        description="Capital allocation % (if omitted, Bot uses CVaR-Kelly & HRP optimal sizing)",
+    )
+    order_type: Optional[str] = Field(default="MARKET", description="MARKET or LIMIT")
+    limit_price: Optional[float] = Field(default=None, description="Optional limit price for LIMIT orders")
+    target_price: Optional[float] = Field(default=None, description="Optional custom take-profit barrier")
+    stop_price: Optional[float] = Field(default=None, description="Optional custom stop-loss barrier")
+    auto_arm: bool = Field(default=True, description="Automatically arm symbol so Bot monitors and manages it")
+    execution_mode: Optional[str] = Field(default="PAPER", description="Strictly PAPER mode only")
+
+
 # ----------------- Interactive Real-Time Dashboard Endpoints ----------------- #
 
 
@@ -691,11 +726,427 @@ def get_dashboard_state():
     return bot.get_dashboard_state()
 
 
+@app.get("/api/feed/health", tags=["Market Data"])
+def get_feed_health():
+    """Returns live market data provider connection health, latency, staleness, and paper-trading status."""
+    bot = _get_live_bot()
+    return bot.get_feed_health_summary()
+
+
+# ----------------- Milestone 2: Trading Session Schemas & Endpoints ----------------- #
+
+class SessionCreateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=120, description="Optional user-assigned session name")
+    market: str = Field(..., description="Target market: US_EQUITIES, INDIAN_NSE, CRYPTO, COMMODITIES, FOREX")
+    instruments: List[str] = Field(..., min_length=1, max_length=20, description="List of approved asset tickers")
+    horizon: str = Field(default="1d", description="Holding horizon: '1h', '1d', or '1wk'")
+    duration_type: str = Field(default="FIXED", description="Duration type: FIXED, CUSTOM, or MANUAL_STOP")
+    duration_minutes: Optional[int] = Field(None, description="Session run duration in minutes (required for FIXED/CUSTOM, max 10080)")
+    session_end_policy: str = Field(default="CLOSE_ALL", description="Action upon expiry: CLOSE_ALL or KEEP_OPEN")
+    allocated_capital: float = Field(..., description="Allocated virtual capital (min 1,000, max 10,000,000)")
+    currency: str = Field(default="USD", description="Currency: USD for US/Crypto/Cmdty/FX, INR for INDIAN_NSE")
+    strategy_config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Custom strategy hyperparameters")
+    risk_config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Custom risk thresholds")
+
+    @field_validator("market")
+    @classmethod
+    def validate_market_field(cls, v: str) -> str:
+        canonical = v.strip().upper()
+        if canonical in ("US", "NYSE", "NASDAQ", "US_EQUITIES"):
+            return "US_EQUITIES"
+        elif canonical in ("NSE", "NSE_CASH", "INDIAN_NSE", "INDIA"):
+            return "INDIAN_NSE"
+        elif canonical in ("CRYPTO", "CRYPTOCURRENCY"):
+            return "CRYPTO"
+        elif canonical in ("COMMODITY", "COMMODITIES", "CME"):
+            return "COMMODITIES"
+        elif canonical in ("FOREX", "FX"):
+            return "FOREX"
+        raise ValueError(f"Unsupported market '{v}'. Must be one of: US_EQUITIES, INDIAN_NSE, CRYPTO, COMMODITIES, FOREX.")
+
+    @field_validator("instruments")
+    @classmethod
+    def validate_instruments_list(cls, v: List[str]) -> List[str]:
+        if not v:
+            raise ValueError("Instruments list must contain at least 1 valid ticker symbol.")
+        cleaned = [t.strip().upper() for t in v if t.strip()]
+        if not cleaned:
+            raise ValueError("Instruments list cannot be empty.")
+        if len(cleaned) != len(set(cleaned)):
+            duplicates = [t for t in cleaned if cleaned.count(t) > 1]
+            raise ValueError(f"Duplicate instruments detected in basket: {list(set(duplicates))}.")
+        return cleaned
+
+    @field_validator("horizon")
+    @classmethod
+    def validate_horizon_field(cls, v: str) -> str:
+        h = v.strip().lower().replace("_", " ").replace("-", " ")
+        if h in ("1h", "1 hour", "1hour", "intraday", "hourly"):
+            return "1h"
+        elif h in ("1d", "1 day", "1day", "daily", "eod"):
+            return "1d"
+        elif h in ("1wk", "1w", "1 week", "1week", "swing", "weekly"):
+            return "1wk"
+        raise ValueError(f"Invalid trading horizon '{v}'. Allowed horizons are: '1h', '1d', '1wk'.")
+
+    @field_validator("duration_type")
+    @classmethod
+    def validate_duration_type_field(cls, v: str) -> str:
+        dt = v.strip().upper()
+        if dt not in ("FIXED", "CUSTOM", "MANUAL_STOP"):
+            raise ValueError(f"Invalid duration_type '{v}'. Allowed types are: FIXED, CUSTOM, MANUAL_STOP.")
+        return dt
+
+    @field_validator("session_end_policy")
+    @classmethod
+    def validate_policy_field(cls, v: str) -> str:
+        pol = v.strip().upper()
+        if pol not in ("CLOSE_ALL", "KEEP_OPEN"):
+            raise ValueError(f"Invalid session_end_policy '{v}'. Allowed policies are: CLOSE_ALL, KEEP_OPEN.")
+        return pol
+
+    @field_validator("currency")
+    @classmethod
+    def validate_currency_field(cls, v: str) -> str:
+        c = v.strip().upper()
+        if c not in ("USD", "INR"):
+            raise ValueError(f"Unsupported currency '{v}'. Platform supports 'USD' or 'INR'.")
+        return c
+
+    @field_validator("allocated_capital")
+    @classmethod
+    def validate_capital_boundaries(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("Allocated virtual capital must be strictly positive.")
+        if v < 1_000.0 or v > 10_000_000.0:
+            raise ValueError(f"Allocated virtual capital ({v:,.2f}) must be between 1,000 and 10,000,000.")
+        return v
+
+    @model_validator(mode="after")
+    def validate_cross_field_rules(self) -> "SessionCreateRequest":
+        expected_curr = "INR" if self.market == "INDIAN_NSE" else "USD"
+        if self.currency != expected_curr:
+            raise ValueError(
+                f"Currency mismatch: Market '{self.market}' requires currency '{expected_curr}', but got '{self.currency}'."
+            )
+        if self.duration_type in ("FIXED", "CUSTOM"):
+            if self.duration_minutes is None or self.duration_minutes <= 0:
+                raise ValueError(f"duration_minutes must be a positive integer for duration_type '{self.duration_type}'.")
+            if self.duration_minutes > 10080:
+                raise ValueError(f"duration_minutes ({self.duration_minutes}) exceeds maximum permitted duration of 10,080 minutes (1 week).")
+        return self
+
+
+class SessionUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=120)
+    instruments: Optional[List[str]] = Field(None, min_length=1, max_length=20)
+    horizon: Optional[str] = None
+    duration_type: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    session_end_policy: Optional[str] = None
+    allocated_capital: Optional[float] = None
+    strategy_config: Optional[Dict[str, Any]] = None
+    risk_config: Optional[Dict[str, Any]] = None
+
+
+class SessionStopRequest(BaseModel):
+    reason: Optional[str] = Field(default="MANUAL_STOP", description="Reason: MANUAL_STOP, USER_REQUEST, RISK_HALT")
+
+
+class RecommendationRequest(BaseModel):
+    market: str = Field(..., description="Target market: US_EQUITIES, INDIAN_NSE, CRYPTO, COMMODITIES, FOREX")
+    target_size: int = Field(default=5, ge=3, le=6, description="Recommended basket size (3 to 6)")
+    candidate_tickers: Optional[List[str]] = Field(default=None, description="Optional custom candidate list")
+
+
+RESERVED_SESSION_SUBPATHS = {"status", "active", "recommendations"}
+
+
+def _guard_session_id(session_id: str) -> None:
+    if session_id.lower() in RESERVED_SESSION_SUBPATHS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{session_id}' is a reserved session route, not a valid session ID.",
+        )
+
+
+CALENDAR_TO_CANONICAL_MARKET = {
+    "NSE_CASH": "INDIAN_NSE",
+    "US_EQUITIES": "US_EQUITIES",
+    "COMMODITY": "COMMODITIES",
+    "FOREX": "FOREX",
+    "CRYPTO": "CRYPTO",
+}
+
+
+def validate_instruments_jurisdiction(market: str, instruments: List[str]) -> None:
+    from src.execution.market_sessions import MarketCalendarManager
+    from src.execution.live_bot import ASSET_CATALOG
+
+    calendar = MarketCalendarManager()
+    canonical_market = market.strip().upper()
+    if canonical_market in ("US", "NYSE", "NASDAQ"):
+        canonical_market = "US_EQUITIES"
+    elif canonical_market in ("NSE", "NSE_CASH", "INDIA"):
+        canonical_market = "INDIAN_NSE"
+    elif canonical_market in ("COMMODITY", "CME"):
+        canonical_market = "COMMODITIES"
+    elif canonical_market in ("FX",):
+        canonical_market = "FOREX"
+    valid_catalog_tickers = set(ASSET_CATALOG.get(canonical_market, []))
+
+    for ticker in instruments:
+        tk = ticker.strip().upper()
+        if tk in valid_catalog_tickers:
+            continue
+        detected_raw = calendar.detect_market_type(tk)
+        detected_canonical = CALENDAR_TO_CANONICAL_MARKET.get(detected_raw, detected_raw)
+        if detected_canonical != canonical_market:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Instrument mismatch: Ticker '{tk}' belongs to {detected_canonical}, not the selected market '{canonical_market}'.",
+            )
+
+
+def validate_capital_and_currency(market: str, capital: float, currency: str) -> None:
+    canonical_market = market.strip().upper()
+    if canonical_market in ("US", "NYSE", "NASDAQ"):
+        canonical_market = "US_EQUITIES"
+    elif canonical_market in ("NSE", "NSE_CASH", "INDIA"):
+        canonical_market = "INDIAN_NSE"
+    expected_currency = "INR" if canonical_market == "INDIAN_NSE" else "USD"
+    if currency != expected_currency:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Currency mismatch: Market '{canonical_market}' requires currency '{expected_currency}', but got '{currency}'.",
+        )
+    if capital <= 0 or capital < 1_000.0 or capital > 10_000_000.0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Virtual capital allocation ({capital:,.2f}) must be between 1,000 and 10,000,000 {currency}.",
+        )
+
+
+def validate_duration_and_horizon(duration_type: str, duration_minutes: Optional[int], horizon: str) -> None:
+    norm_h = horizon.strip().lower().replace("_", " ").replace("-", " ")
+    if norm_h not in ("1h", "1 hour", "1hour", "intraday", "hourly", "1d", "1 day", "1day", "daily", "eod", "1wk", "1w", "1 week", "1week", "swing", "weekly"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid trading horizon '{horizon}'. Allowed: '1h', '1d', '1wk'.",
+        )
+    dt = duration_type.strip().upper()
+    if dt not in ("FIXED", "CUSTOM", "MANUAL_STOP"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid duration_type '{dt}'. Allowed: 'FIXED', 'CUSTOM', 'MANUAL_STOP'.",
+        )
+    if dt in ("FIXED", "CUSTOM"):
+        if duration_minutes is None or duration_minutes <= 0 or duration_minutes > 10080:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Duration minutes must be a positive integer <= 10080 (1 week).",
+            )
+
+
+# [1] Physical Exchange Sessions Status (Existing Endpoint - PRESERVED PRECEDENCE)
 @app.get("/api/sessions/status", tags=["Sessions"])
 def get_sessions_status():
     """Returns complete physical exchange session states, countdowns, and statutory holiday statuses."""
     bot = _get_live_bot()
     return bot.get_all_market_sessions()
+
+
+# [2] Get Active Session
+@app.get("/api/sessions/active", tags=["Trading Sessions"])
+def get_active_trading_session():
+    """Returns currently operational session (RUNNING or PAUSED) or null."""
+    mgr = _get_session_manager()
+    session = mgr.get_active_session()
+    if session is None:
+        return {"session": None}
+    return {"session": session.to_dict()}
+
+
+# [3] Get Basket Recommendations via UniverseSelector
+@app.post("/api/sessions/recommendations", tags=["Trading Sessions"])
+def get_session_recommendations(req: RecommendationRequest):
+    """Computes quantitative recommendations with multi-factor screening and setup wizard rationales."""
+    from src.strategy.universe_selector import UniverseSelector
+    bot = _get_live_bot()
+    selector = UniverseSelector(
+        downloader=getattr(engine, "downloader", None) if engine else None,
+        data_provider=getattr(bot, "data_provider", None) if bot else None,
+    )
+    try:
+        result = selector.auto_select_basket(
+            market=req.market,
+            target_size=req.target_size,
+            candidate_tickers=req.candidate_tickers,
+        )
+        return result.to_dict()
+    except Exception as exc:
+        logger.error(f"Error computing recommendations: {exc}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Recommendation failed: {exc}")
+
+
+# [4] List Sessions
+@app.get("/api/sessions", tags=["Trading Sessions"])
+def list_trading_sessions(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    market: Optional[str] = Query(None, description="Filter by market"),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Lists trading sessions with optional filtering and pagination."""
+    mgr = _get_session_manager()
+    sessions = mgr.list_sessions(status=status, market=market, limit=limit, offset=offset)
+    return {"total": len(sessions), "sessions": [s.to_dict() for s in sessions]}
+
+
+# [5] Create Trading Session
+@app.post("/api/sessions", tags=["Trading Sessions"], status_code=status.HTTP_201_CREATED)
+def create_trading_session(req: SessionCreateRequest):
+    """Validates configuration parameters and creates a new trading session in CREATED state."""
+    validate_capital_and_currency(req.market, req.allocated_capital, req.currency)
+    validate_instruments_jurisdiction(req.market, req.instruments)
+    validate_duration_and_horizon(req.duration_type, req.duration_minutes, req.horizon)
+    mgr = _get_session_manager()
+    try:
+        session = mgr.create_session(req)
+        return {"session": session.to_dict(), "message": "Trading session created successfully."}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# [6] Get Session by ID
+@app.get("/api/sessions/{session_id}", tags=["Trading Sessions"])
+def get_trading_session_by_id(session_id: str):
+    """Retrieves session details by unique session ID."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Trading session '{session_id}' not found.")
+    return {"session": session.to_dict()}
+
+
+# [7] Update Session (only CREATED or PAUSED)
+@app.put("/api/sessions/{session_id}", tags=["Trading Sessions"])
+def update_trading_session(session_id: str, req: SessionUpdateRequest):
+    """Updates session parameters while in CREATED or PAUSED state."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    if session.status not in ("CREATED", "PAUSED"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot update session '{session_id}' while in '{session.status}' state. Only CREATED or PAUSED sessions can be modified.",
+        )
+    if req.instruments is not None:
+        validate_instruments_jurisdiction(session.market, req.instruments)
+    if req.allocated_capital is not None:
+        validate_capital_and_currency(session.market, req.allocated_capital, session.currency)
+    if req.duration_type is not None or req.duration_minutes is not None:
+        dt = req.duration_type or session.duration_type
+        dm = req.duration_minutes if req.duration_minutes is not None else session.duration_minutes
+        hz = req.horizon or session.horizon
+        validate_duration_and_horizon(dt, dm, hz)
+    try:
+        updated = mgr.update_session(session_id, req)
+        return {"session": updated.to_dict(), "message": "Session updated successfully."}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# [8] Start Session
+@app.post("/api/sessions/{session_id}/start", tags=["Trading Sessions"])
+def start_trading_session(session_id: str):
+    """Launches a CREATED session, dynamically sets horizon parameters, and arms bot with approved basket."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    if session.status == "RUNNING":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Session '{session_id}' is already RUNNING.")
+    if session.status in ("COMPLETED", "STOPPED"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot start session '{session_id}' in {session.status} state.")
+    active = mgr.get_active_session()
+    if active and active.id != session_id and active.status == "RUNNING":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Another session '{active.id}' is currently RUNNING. Stop or pause it first.")
+    bot = _get_live_bot()
+    try:
+        started = mgr.start_session(session_id, bot)
+        return {"session": started.to_dict(), "message": "Trading session started successfully."}
+    except RuntimeError as rerr:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(rerr))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# [9] Pause Session
+@app.post("/api/sessions/{session_id}/pause", tags=["Trading Sessions"])
+def pause_trading_session(session_id: str):
+    """Suspends autonomous entries while keeping existing positions open with active MTM and stop loss monitoring."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    if session.status != "RUNNING":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot pause session in '{session.status}' state. Only RUNNING sessions can be paused.")
+    bot = _get_live_bot()
+    paused = mgr.pause_session(session_id, bot)
+    return {"session": paused.to_dict(), "message": "Trading session paused. New entries halted."}
+
+
+# [10] Resume Session
+@app.post("/api/sessions/{session_id}/resume", tags=["Trading Sessions"])
+def resume_trading_session(session_id: str):
+    """Resumes a PAUSED session and shifts expiry timestamp forward by elapsed pause duration."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    if session.status != "PAUSED":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot resume session in '{session.status}' state. Only PAUSED sessions can be resumed.")
+    bot = _get_live_bot()
+    resumed = mgr.resume_session(session_id, bot)
+    return {"session": resumed.to_dict(), "message": "Trading session resumed successfully."}
+
+
+# [11] Stop Session
+@app.post("/api/sessions/{session_id}/stop", tags=["Trading Sessions"])
+def stop_trading_session(session_id: str, req: Optional[SessionStopRequest] = None):
+    """Terminates session into STOPPED state and executes configured session_end_policy."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    if session.status in ("COMPLETED", "STOPPED"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Session '{session_id}' is already {session.status}.")
+    reason = req.reason if req and req.reason else "MANUAL_STOP"
+    bot = _get_live_bot()
+    stopped = mgr.stop_session(session_id, bot, reason=reason)
+    return {"session": stopped.to_dict(), "message": f"Trading session stopped ({reason}). Policy '{stopped.session_end_policy}' executed."}
+
+
+# [12] Session Performance
+@app.get("/api/sessions/{session_id}/performance", tags=["Trading Sessions"])
+def get_session_performance(session_id: str):
+    """Computes comprehensive session performance KPIs, P&L, win rate, and drawdown."""
+    _guard_session_id(session_id)
+    mgr = _get_session_manager()
+    session = mgr.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session '{session_id}' not found.")
+    bot = _get_live_bot()
+    metrics = mgr.compute_session_performance(session_id, bot)
+    return {"session_id": session_id, "performance": metrics}
 
 
 @app.get("/api/dashboard/orders/pending", tags=["Dashboard"])
@@ -718,6 +1169,47 @@ def cancel_pending_order(order_id: str):
         "order_id": order_id,
         "dashboard_state": bot.get_dashboard_state(),
     }
+
+
+@app.get("/api/dashboard/search", tags=["Dashboard"])
+def search_dashboard_instruments(
+    q: str = Query("", description="Ticker symbol, company name, or sector search query"),
+    category: str = Query("ALL", description="Optional category filter: ALL, US, NSE, CRYPTO, COMMODITY, FOREX"),
+    limit: int = Query(16, ge=1, le=50, description="Max search results"),
+):
+    """Searches stocks and multi-asset instruments by symbol, company name, or sector with live status."""
+    bot = _get_live_bot()
+    results = bot.search_instruments(query=q, category=category, limit=limit)
+    return {
+        "query": q,
+        "category": category,
+        "total": len(results),
+        "results": results,
+    }
+
+
+@app.post("/api/dashboard/bot-trade", tags=["Dashboard"])
+def execute_bot_managed_trade(req: BotTradeRequest):
+    """Analyzes a searched stock, computes Neuro-Causal barriers & Kelly sizing, arms the bot, and places/queues a paper trade."""
+    if req.execution_mode and req.execution_mode.upper() not in ("PAPER", "VIRTUAL", "VIRTUAL_PAPER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
+        )
+    bot = _get_live_bot()
+    try:
+        return bot.place_bot_managed_trade(
+            ticker=req.ticker,
+            direction=req.direction,
+            allocation_weight_pct=req.allocation_weight_pct,
+            order_type=req.order_type or "MARKET",
+            limit_price=req.limit_price,
+            target_price=req.target_price,
+            stop_price=req.stop_price,
+            auto_arm=req.auto_arm,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
 
 
 @app.post("/api/dashboard/select-assets", tags=["Dashboard"])
@@ -765,20 +1257,34 @@ def toggle_bot_running():
 
 @app.post("/api/dashboard/order", tags=["Dashboard"])
 def dashboard_manual_order(req: OrderRequest):
-    """Places an order from the terminal; queues as PRE_MARKET_PENDING if physical exchange is closed."""
+    """Places a virtual paper order from the terminal; queues as PRE_MARKET_PENDING if physical exchange is closed."""
+    if req.execution_mode and req.execution_mode.upper() not in ("PAPER", "VIRTUAL", "VIRTUAL_PAPER"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
+        )
     bot = _get_live_bot()
     tk = req.ticker.upper()
-    curr_p = bot.live_prices.get(tk)
-    if curr_p is None:
-        analysis = bot.engine.analyze_ticker(tk, period="1y", interval="1d")
-        if not analysis:
-            raise HTTPException(status_code=400, detail=f"Unknown ticker {tk}")
-        curr_p = analysis.current_price
-        bot.analyses[tk] = analysis
-        bot.live_prices[tk] = curr_p
-        bot.base_prices[tk] = curr_p
+    if req.direction and req.direction.upper() == "AUTO":
+        try:
+            return bot.place_bot_managed_trade(
+                ticker=tk,
+                direction="AUTO",
+                allocation_weight_pct=req.allocation_weight_pct,
+                order_type=req.order_type or "MARKET",
+                limit_price=req.limit_price,
+                target_price=req.target_price,
+                stop_price=req.stop_price,
+                auto_arm=True,
+            )
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err))
 
-    res = bot.analyses.get(tk)
+    res = bot.ensure_ticker_loaded(tk, arm=True)
+    if not res:
+        raise HTTPException(status_code=400, detail=f"Unknown ticker {tk}")
+    curr_p = bot.live_prices.get(tk, float(res.current_price))
+
     vol_bar = max(res.volatility_cone.expected_vol_annualized / np.sqrt(252.0), 0.012) if res else 0.015
     decimals = 4 if (res and res.market_jurisdiction == "FOREX") else 2
     direction = req.direction.upper()

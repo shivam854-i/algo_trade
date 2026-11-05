@@ -10,24 +10,35 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle2,
+  Bot,
 } from "lucide-react";
-import { BotStatus, PendingOrder } from "../types";
+import { AssetTelemetry, BotStatus, BotTradeResponse, PendingOrder } from "../types";
 
 interface OrderControlsProps {
   selectedTicker: string;
+  selectedAsset?: AssetTelemetry;
   botStatus?: BotStatus;
   availableCash: number;
   currentPrice: number;
   pendingOrders: PendingOrder[];
   onPlaceOrder: (
     ticker: string,
-    direction: "LONG" | "SHORT",
+    direction: "LONG" | "SHORT" | "AUTO",
     allocWeight?: number,
     orderType?: "MARKET" | "LIMIT",
     limitPrice?: number,
     targetPrice?: number,
     stopPrice?: number
   ) => Promise<void>;
+  onPlaceBotTrade?: (
+    ticker: string,
+    direction?: "AUTO" | "LONG" | "SHORT",
+    allocWeight?: number,
+    orderType?: "MARKET" | "LIMIT",
+    limitPrice?: number,
+    targetPrice?: number,
+    stopPrice?: number
+  ) => Promise<BotTradeResponse>;
   onCancelPendingOrder: (orderId: string) => Promise<void>;
   onToggleBot: () => Promise<void>;
   onToggleMarketHours: () => Promise<void>;
@@ -37,18 +48,20 @@ interface OrderControlsProps {
 
 export const OrderControls: React.FC<OrderControlsProps> = ({
   selectedTicker,
+  selectedAsset,
   botStatus,
   availableCash,
   currentPrice,
   pendingOrders,
   onPlaceOrder,
+  onPlaceBotTrade,
   onCancelPendingOrder,
   onToggleBot,
   onToggleMarketHours,
   onStepTick,
   onResetAccount,
 }) => {
-  const [direction, setDirection] = useState<"LONG" | "SHORT">("LONG");
+  const [direction, setDirection] = useState<"LONG" | "SHORT" | "AUTO">("LONG");
   const [allocWeight, setAllocWeight] = useState<number>(10);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [limitPrice, setLimitPrice] = useState<string>(
@@ -77,23 +90,40 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
       if (orderType === "LIMIT" && (parsedLimit === undefined || parsedLimit <= 0)) {
         throw new Error("Please enter a valid limit price greater than 0");
       }
-      await onPlaceOrder(
-        selectedTicker,
-        direction,
-        allocWeight,
-        orderType,
-        parsedLimit,
-        undefined,
-        undefined
-      );
-      setOrderFeedback({
-        type: "success",
-        message: `${direction} order submitted for ${selectedTicker} ($${approxCapital.toLocaleString(
+      if (direction === "AUTO" && onPlaceBotTrade) {
+        const resp = await onPlaceBotTrade(
+          selectedTicker,
+          "AUTO",
+          allocWeight,
+          orderType,
+          parsedLimit
+        );
+        setOrderFeedback({
+          type: "success",
+          message: `[BOT-MANAGED] ${resp.direction} order submitted for ${selectedTicker} ($${approxCapital.toLocaleString(
+            undefined,
+            { maximumFractionDigits: 0 }
+          )}) | Target: ${resp.target_price} | Stop: ${resp.stop_price}`,
+        });
+      } else {
+        await onPlaceOrder(
+          selectedTicker,
+          direction,
+          allocWeight,
+          orderType,
+          parsedLimit,
           undefined,
-          { maximumFractionDigits: 0 }
-        )})`,
-      });
-      setTimeout(() => setOrderFeedback(null), 4000);
+          undefined
+        );
+        setOrderFeedback({
+          type: "success",
+          message: `${direction} order submitted for ${selectedTicker} ($${approxCapital.toLocaleString(
+            undefined,
+            { maximumFractionDigits: 0 }
+          )}) — Bot managing TP/SL barriers`,
+        });
+      }
+      setTimeout(() => setOrderFeedback(null), 4500);
     } catch (err) {
       setOrderFeedback({
         type: "error",
@@ -186,8 +216,8 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
           </span>
         </div>
 
-        {/* Direction Tabs (BUY vs SELL) */}
-        <div className="grid grid-cols-2 gap-2 font-mono">
+        {/* Direction Tabs (BUY / SELL / BOT AUTO) */}
+        <div className="grid grid-cols-3 gap-2 font-mono">
           <button
             type="button"
             onClick={() => setDirection("LONG")}
@@ -212,7 +242,48 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
             <ArrowDownRight className="w-4 h-4 mr-1" />
             SELL / SHORT
           </button>
+          <button
+            type="button"
+            onClick={() => setDirection("AUTO")}
+            className={`py-2 rounded-lg font-bold text-xs flex items-center justify-center transition ${
+              direction === "AUTO"
+                ? "bg-sky-400 text-slate-950 shadow-[0_0_12px_rgba(56,189,248,0.35)]"
+                : "bg-slate-900 text-sky-400 border border-sky-500/30 hover:bg-sky-500/10"
+            }`}
+            title="Let Bot choose optimal AI direction and manage Stop-Loss & Take-Profit"
+          >
+            <Bot className="w-4 h-4 mr-1" />
+            BOT AUTO (AI)
+          </button>
         </div>
+
+        {/* Bot-Managed Barrier Preview */}
+        {selectedAsset && (
+          <div className="px-2.5 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+            <span>
+              AI Signal:{" "}
+              <strong
+                className={
+                  selectedAsset.primary_direction >= 0
+                    ? "text-emerald-400"
+                    : "text-rose-400"
+                }
+              >
+                {selectedAsset.signal} ({selectedAsset.confidence_pct}%)
+              </strong>
+            </span>
+            <span>
+              Bot Target:{" "}
+              <strong className="text-emerald-300">
+                {selectedAsset.target_price.toFixed(selectedAsset.decimals)}
+              </strong>{" "}
+              • Bot Stop:{" "}
+              <strong className="text-rose-300">
+                {selectedAsset.stop_price.toFixed(selectedAsset.decimals)}
+              </strong>
+            </span>
+          </div>
+        )}
 
         {/* Capital Allocation Slider */}
         <div className="space-y-1 font-mono text-xs">
@@ -277,10 +348,16 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
           className={`w-full py-2 rounded-lg font-mono font-bold text-xs tracking-wider transition ${
             direction === "LONG"
               ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40"
-              : "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40"
+              : direction === "SHORT"
+              ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40"
+              : "bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40"
           } ${isSubmitting ? "opacity-50 cursor-wait" : ""}`}
         >
-          {isSubmitting ? "SUBMITTING..." : `EXECUTE ${direction} ${selectedTicker}`}
+          {isSubmitting
+            ? "SUBMITTING..."
+            : direction === "AUTO"
+            ? `EXECUTE BOT AUTO-TRADE ${selectedTicker}`
+            : `EXECUTE ${direction} ${selectedTicker}`}
         </button>
 
         {/* Order Feedback Alert */}
