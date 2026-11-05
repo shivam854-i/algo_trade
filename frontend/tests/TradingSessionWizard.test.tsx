@@ -57,7 +57,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
 
   describe("Step 2: Instrument Selection & Auto-Select", () => {
     it("renders basket chips, capacity indicator, and allows manual remove", () => {
-      const html = ReactDOMServer.renderToString(
+      const rawHtml = ReactDOMServer.renderToString(
         <Step2InstrumentSelection
           market="US_EQUITIES"
           instruments={["NVDA", "AAPL", "MSFT"]}
@@ -67,6 +67,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
           onRequestRecommendations={() => {}}
         />
       );
+      const html = rawHtml.replace(/<!-- -->/g, "");
 
       expect(html).toContain("NVDA");
       expect(html).toContain("AAPL");
@@ -76,7 +77,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
     });
 
     it("displays quantitative selection rationale and multi-factor badges when recommendations are present", () => {
-      const html = ReactDOMServer.renderToString(
+      const rawHtml = ReactDOMServer.renderToString(
         <Step2InstrumentSelection
           market="US_EQUITIES"
           instruments={["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL"]}
@@ -106,6 +107,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
           onRequestRecommendations={() => {}}
         />
       );
+      const html = rawHtml.replace(/<!-- -->/g, "");
 
       expect(html).toContain("Quantitative Selection Rationale (UniverseSelector)");
       expect(html).toContain("Auto-selected 5 high-liquidity US instruments");
@@ -191,26 +193,28 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
   describe("Step 5: Virtual Capital Allocation", () => {
     it("renders capital input with market currency symbol and enforce boundaries", () => {
       // USD Market
-      const usdHtml = ReactDOMServer.renderToString(
+      const rawUsdHtml = ReactDOMServer.renderToString(
         <Step5CapitalAllocation
           allocatedCapital={50000}
           currency="USD"
           onSetAllocatedCapital={() => {}}
         />
       );
+      const usdHtml = rawUsdHtml.replace(/<!-- -->/g, "");
       expect(usdHtml).toContain("$50,000");
       expect(usdHtml).toContain("Min: $1,000");
       expect(usdHtml).toContain("Max: $10,000,000");
       expect(usdHtml).toContain("Strict Paper-Trading Isolation &amp; Invariance Guarantee");
 
       // INR Market
-      const inrHtml = ReactDOMServer.renderToString(
+      const rawInrHtml = ReactDOMServer.renderToString(
         <Step5CapitalAllocation
           allocatedCapital={500000}
           currency="INR"
           onSetAllocatedCapital={() => {}}
         />
       );
+      const inrHtml = rawInrHtml.replace(/<!-- -->/g, "");
       expect(inrHtml).toMatch(/₹5,?00,?000/);
       expect(inrHtml).toContain("Min: ₹1,000");
       expect(inrHtml).toContain("Max: ₹10,000,000");
@@ -219,7 +223,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
 
   describe("Step 6: Confirmation Review & Jump Edit Links", () => {
     it("renders comprehensive parameters summary and jump edit links for all 5 steps", () => {
-      const html = ReactDOMServer.renderToString(
+      const rawHtml = ReactDOMServer.renderToString(
         <Step6Confirmation
           state={{
             ...INITIAL_WIZARD_STATE,
@@ -236,6 +240,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
           onSetSessionName={() => {}}
         />
       );
+      const html = rawHtml.replace(/<!-- -->/g, "");
 
       expect(html).toContain("Review Session Parameters &amp; Launch");
       expect(html).toContain("US_EQUITIES");
@@ -258,13 +263,14 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
 
   describe("Wizard Modal Orchestrator", () => {
     it("renders modal dialog with Stepper header when isOpen is true", () => {
-      const html = ReactDOMServer.renderToString(
+      const rawHtml = ReactDOMServer.renderToString(
         <TradingSessionWizardModal
           isOpen={true}
           onClose={() => {}}
           onSessionStarted={() => {}}
         />
       );
+      const html = rawHtml.replace(/<!-- -->/g, "");
 
       expect(html).toContain("SYNAPSE-TITAN Trading Session Setup Wizard");
       expect(html).toContain("Step 1 of 6");

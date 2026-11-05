@@ -526,13 +526,6 @@ class SessionManager:
         if session.status != SessionStatus.CREATED.value:
             raise ValueError(f"Cannot start session in state '{session.status}'. Must be in 'CREATED' state.")
 
-        active = self.get_active_session(session.account_id)
-        if active and active.id != session_id:
-            raise RuntimeError(
-                f"Cannot start session #{session_id}: Account already has active session #{active.id} ({active.status}). "
-                "Pause or stop the active session first."
-            )
-
         now_utc = datetime.now(timezone.utc)
         now_str = now_utc.isoformat()
 
@@ -542,11 +535,28 @@ class SessionManager:
 
         with self.ledger._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute("""
+                SELECT id, status FROM trading_sessions
+                WHERE account_id = ? AND status IN ('RUNNING', 'PAUSED')
+                LIMIT 1
+            """, (session.account_id,))
+            active_row = cursor.fetchone()
+            if active_row and active_row["id"] != session_id:
+                conn.rollback()
+                raise RuntimeError(
+                    f"Cannot start session #{session_id}: Account already has active session #{active_row['id']} ({active_row['status']}). "
+                    "Pause or stop the active session first."
+                )
+
             cursor.execute("""
                 UPDATE trading_sessions
                 SET status = 'RUNNING', started_at = ?, expires_at = ?, last_heartbeat_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'CREATED'
             """, (now_str, expires_at, now_str, session_id))
+            if cursor.rowcount == 0:
+                conn.rollback()
+                raise ValueError(f"Cannot start session #{session_id}. Session might not be in CREATED state.")
             conn.commit()
 
         updated_session = self.get_session(session_id)
@@ -737,21 +747,14 @@ class SessionManager:
         if not session:
             raise KeyError(f"Session #{session_id} not found")
 
-        # Query closed trades for this session or account
+        # Query closed trades for this session strictly
         with self.ledger._get_connection() as conn:
             cursor = conn.cursor()
-            # Attempt filter by session_id first, fallback to account_id
             cursor.execute("SELECT * FROM trades WHERE session_id = ?", (session_id,))
             closed_trades = cursor.fetchall()
-            if not closed_trades:
-                cursor.execute("SELECT * FROM trades WHERE account_id = ?", (session.account_id,))
-                closed_trades = cursor.fetchall()
 
             cursor.execute("SELECT * FROM positions WHERE status = 'OPEN' AND session_id = ?", (session_id,))
             open_positions = cursor.fetchall()
-            if not open_positions:
-                cursor.execute("SELECT * FROM positions WHERE status = 'OPEN' AND account_id = ?", (session.account_id,))
-                open_positions = cursor.fetchall()
 
         total_trades = len(closed_trades)
         winning_trades = sum(1 for t in closed_trades if float(t["net_pnl"]) > 0)

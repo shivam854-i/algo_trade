@@ -844,6 +844,19 @@ class PaperBroker:
         now_str = datetime.now(timezone.utc).isoformat()
         mkt_ts = str(market_timestamp or now_str)
         effective_session_id = session_id or getattr(self, "active_session_id", None)
+        if not effective_session_id:
+            try:
+                with self.ledger._get_connection() as c_check:
+                    cur_c = c_check.cursor()
+                    cur_c.execute(
+                        "SELECT id FROM trading_sessions WHERE account_id = ? AND status IN ('RUNNING', 'PAUSED') ORDER BY started_at DESC LIMIT 1",
+                        (self.account_id,)
+                    )
+                    row_c = cur_c.fetchone()
+                    if row_c:
+                        effective_session_id = str(row_c["id"])
+            except Exception:
+                pass
 
         with self.ledger._get_connection() as conn:
             cursor = conn.cursor()
@@ -1340,6 +1353,17 @@ class PaperBroker:
             )
 
             session_id_val = str(row["session_id"]) if ("session_id" in row.keys() and row["session_id"]) else getattr(self, "active_session_id", None)
+            if not session_id_val:
+                try:
+                    cursor.execute(
+                        "SELECT id FROM trading_sessions WHERE account_id = ? AND status IN ('RUNNING', 'PAUSED') ORDER BY started_at DESC LIMIT 1",
+                        (self.account_id,)
+                    )
+                    row_c = cursor.fetchone()
+                    if row_c:
+                        session_id_val = str(row_c["id"])
+                except Exception:
+                    pass
 
             # 2. Record completed trade
             cursor.execute("""
