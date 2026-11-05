@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator, model_validator
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -1123,7 +1123,7 @@ def resume_trading_session(session_id: str):
 
 # [11] Stop Session
 @app.post("/api/sessions/{session_id}/stop", tags=["Trading Sessions"])
-def stop_trading_session(session_id: str, req: Optional[SessionStopRequest] = None):
+def stop_trading_session(session_id: str, req: Optional[SessionStopRequest] = Body(None)):
     """Terminates session into STOPPED state and executes configured session_end_policy."""
     _guard_session_id(session_id)
     mgr = _get_session_manager()
