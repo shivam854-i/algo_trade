@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BotTradeResponse, DashboardState, LogItem, PendingOrder, PricePoint } from "../types";
+import {
+  BotTradeResponse,
+  DashboardState,
+  LogItem,
+  PendingOrder,
+  PricePoint,
+  TradingSession,
+} from "../types";
 import { RingBuffer } from "../utils/ringBuffer";
 import { usePageVisibility } from "./usePageVisibility";
+import { sessionApi } from "../services/sessionApi";
 
 interface UseDashboardStreamOptions {
   pollIntervalMs?: number;
@@ -20,7 +28,18 @@ export interface UseDashboardStreamResult {
   chartData: PricePoint[];
   boundedActivityLog: LogItem[];
   pendingOrders: PendingOrder[];
-  // Actions
+  // Session State & Telemetry
+  activeSession: TradingSession | null;
+  hasActiveSession: boolean;
+  isSessionRunning: boolean;
+  isSessionPaused: boolean;
+  sessionCurrency: string;
+  // Session Lifecycle Actions
+  startSession: (sessionId: string) => Promise<TradingSession>;
+  pauseSession: (sessionId: string) => Promise<TradingSession>;
+  resumeSession: (sessionId: string) => Promise<TradingSession>;
+  stopSession: (sessionId: string, reason?: string) => Promise<TradingSession>;
+  // Existing Actions
   refreshState: () => Promise<void>;
   stepTick: (shockPct?: number) => Promise<void>;
   toggleBot: () => Promise<void>;
@@ -214,7 +233,7 @@ export function useDashboardStream({
     // Start background polling timer
     pollTimerRef.current = window.setInterval(() => {
       setState((prev) => {
-        if (prev?.bot_status?.is_running) {
+        if (prev?.bot_status?.is_running && prev?.active_session?.status === "RUNNING") {
           stepTick();
         } else {
           fetchState();
@@ -428,6 +447,52 @@ export function useDashboardStream({
     [fetchPendingOrders, fetchState]
   );
 
+  // Derived Session Helper Properties
+  const activeSession = state?.active_session ?? null;
+  const hasActiveSession = Boolean(
+    activeSession && !["COMPLETED", "STOPPED"].includes(activeSession.status)
+  );
+  const isSessionRunning = activeSession?.status === "RUNNING";
+  const isSessionPaused = activeSession?.status === "PAUSED";
+  const sessionCurrency = activeSession?.currency ?? state?.currency ?? "USD";
+
+  // Session Action Handlers
+  const startSession = useCallback(
+    async (sessionId: string): Promise<TradingSession> => {
+      const sess = await sessionApi.startSession(sessionId);
+      await fetchState();
+      return sess;
+    },
+    [fetchState]
+  );
+
+  const pauseSession = useCallback(
+    async (sessionId: string): Promise<TradingSession> => {
+      const sess = await sessionApi.pauseSession(sessionId);
+      await fetchState();
+      return sess;
+    },
+    [fetchState]
+  );
+
+  const resumeSession = useCallback(
+    async (sessionId: string): Promise<TradingSession> => {
+      const sess = await sessionApi.resumeSession(sessionId);
+      await fetchState();
+      return sess;
+    },
+    [fetchState]
+  );
+
+  const stopSession = useCallback(
+    async (sessionId: string, reason?: string): Promise<TradingSession> => {
+      const sess = await sessionApi.stopSession(sessionId, reason);
+      await fetchState();
+      return sess;
+    },
+    [fetchState]
+  );
+
   return {
     state,
     isLoading,
@@ -439,6 +504,15 @@ export function useDashboardStream({
     chartData,
     boundedActivityLog,
     pendingOrders,
+    activeSession,
+    hasActiveSession,
+    isSessionRunning,
+    isSessionPaused,
+    sessionCurrency,
+    startSession,
+    pauseSession,
+    resumeSession,
+    stopSession,
     refreshState: fetchState,
     stepTick,
     toggleBot,

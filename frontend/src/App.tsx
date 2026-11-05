@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Header } from "./components/Header";
 import { MarketSessionRibbon } from "./components/MarketSessionRibbon";
 import { KpiRibbon } from "./components/KpiRibbon";
@@ -7,6 +7,9 @@ import { ChartContainer } from "./components/ChartContainer";
 import { PositionsTable } from "./components/PositionsTable";
 import { OrderControls } from "./components/OrderControls";
 import { ActivityLog } from "./components/ActivityLog";
+import { TradingSessionWizardModal } from "./components/wizard/TradingSessionWizardModal";
+import { SessionTelemetryBar } from "./components/session/SessionTelemetryBar";
+import { SessionGatingBanner } from "./components/session/SessionGatingBanner";
 import { useDashboardStream } from "./hooks/useDashboardStream";
 import { ShieldCheck, HardDrive, Cpu, AlertCircle } from "lucide-react";
 
@@ -21,6 +24,14 @@ export const App: React.FC = () => {
     chartData,
     boundedActivityLog,
     pendingOrders,
+    activeSession,
+    hasActiveSession,
+    isSessionRunning,
+    sessionCurrency,
+    startSession,
+    pauseSession,
+    resumeSession,
+    stopSession,
     refreshState,
     stepTick,
     toggleBot,
@@ -33,6 +44,8 @@ export const App: React.FC = () => {
     placeBotTrade,
     cancelPendingOrder,
   } = useDashboardStream({ pollIntervalMs: 2500, chartCapacity: 500, logCapacity: 100 });
+
+  const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
 
   const selectedAsset = state?.assets?.[selectedTicker];
   const armedTickers = state?.bot_status?.armed_tickers ?? [];
@@ -84,7 +97,40 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* 2. Physical Exchange Session Ribbon with 1s Countdowns */}
+        {/* 2. Session Gating Banner (High-visibility warning when execution is gated) */}
+        {!hasActiveSession && (
+          <section aria-label="Session Gating Banner">
+            <SessionGatingBanner onOpenWizard={() => setIsWizardOpen(true)} />
+          </section>
+        )}
+
+        {/* 3. Session Telemetry Bar (Live status, basket, countdown, and controls) */}
+        {activeSession && (
+          <section aria-label="Session Telemetry">
+            <SessionTelemetryBar
+              session={activeSession}
+              account={state?.account}
+              feedHealth={state?.data_feed_status}
+              selectedTicker={selectedTicker}
+              onSelectTicker={setSelectedTicker}
+              onStartSession={async (id) => {
+                await startSession(id);
+              }}
+              onPauseSession={async (id) => {
+                await pauseSession(id);
+              }}
+              onResumeSession={async (id) => {
+                await resumeSession(id);
+              }}
+              onStopSession={async (id, reason) => {
+                await stopSession(id, reason);
+              }}
+              onOpenWizard={() => setIsWizardOpen(true)}
+            />
+          </section>
+        )}
+
+        {/* 4. Physical Exchange Session Ribbon with 1s Countdowns */}
         <section aria-label="Exchange Sessions">
           <MarketSessionRibbon
             marketSessions={state?.market_sessions}
@@ -92,12 +138,12 @@ export const App: React.FC = () => {
           />
         </section>
 
-        {/* 3. KPI Performance & Alpha Metrics */}
+        {/* 5. KPI Performance & Alpha Metrics (Currency-aware ₹/$) */}
         <section aria-label="Performance KPIs">
-          <KpiRibbon account={state?.account} />
+          <KpiRibbon account={state?.account} currency={sessionCurrency} />
         </section>
 
-        {/* 4. Multi-Asset Selector Bar */}
+        {/* 6. Multi-Asset Selector Bar */}
         <section aria-label="Watchlist & Asset Selection">
           <AssetSelector
             assets={state?.assets ?? {}}
@@ -110,7 +156,7 @@ export const App: React.FC = () => {
           />
         </section>
 
-        {/* 5. Core Cockpit Grid Layout */}
+        {/* 7. Core Cockpit Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Left Column (7/12 on large screens) */}
           <div className="lg:col-span-7 space-y-4">
@@ -121,10 +167,11 @@ export const App: React.FC = () => {
               chartData={chartData}
             />
 
-            {/* Positions & Closed Trades Table */}
+            {/* Positions & Closed Trades Table (Currency-aware ₹/$) */}
             <PositionsTable
               positions={state?.open_positions ?? []}
               closedTrades={state?.closed_trades ?? []}
+              currency={sessionCurrency}
               onClosePosition={closePosition}
               onFlattenAll={flattenAll}
             />
@@ -132,7 +179,7 @@ export const App: React.FC = () => {
 
           {/* Right Column (5/12 on large screens) */}
           <div className="lg:col-span-5 space-y-4">
-            {/* Order Controls & Pre-Market Pending Queue */}
+            {/* Order Controls & Pre-Market Pending Queue with Session Gating Locks */}
             <OrderControls
               selectedTicker={selectedTicker}
               selectedAsset={selectedAsset}
@@ -145,6 +192,8 @@ export const App: React.FC = () => {
               }
               currentPrice={selectedAsset?.current_price ?? 0}
               pendingOrders={pendingOrders}
+              isSessionGated={!isSessionRunning}
+              currency={sessionCurrency}
               onPlaceOrder={placeOrder}
               onPlaceBotTrade={placeBotTrade}
               onCancelPendingOrder={cancelPendingOrder}
@@ -154,11 +203,24 @@ export const App: React.FC = () => {
               onResetAccount={resetAccount}
             />
 
-            {/* Bounded Streaming Event Log */}
+            {/* Bounded Streaming Event Log with DECISION category and Net EV math cards */}
             <ActivityLog logs={boundedActivityLog} />
           </div>
         </div>
       </main>
+
+      {/* 6-Step Setup Wizard Modal */}
+      <TradingSessionWizardModal
+        isOpen={isWizardOpen}
+        marketSessions={state?.market_sessions}
+        onClose={() => setIsWizardOpen(false)}
+        onSessionStarted={(newSession) => {
+          refreshState();
+          if (newSession.instruments && newSession.instruments.length > 0) {
+            setSelectedTicker(newSession.instruments[0]);
+          }
+        }}
+      />
 
       {/* Institutional Status Footer */}
       <footer className="glass-panel border-t border-slate-800/80 px-4 py-2.5 text-[11px] font-mono text-slate-500 flex flex-wrap items-center justify-between gap-3">

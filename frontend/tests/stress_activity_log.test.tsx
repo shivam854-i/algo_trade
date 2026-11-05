@@ -13,6 +13,7 @@ describe("Adversarial Stress Test: ActivityLog Mixed Streaming Payloads", () => 
     STOP: "bg-rose-500/20 text-rose-300 border-rose-500/40",
     RISK: "bg-amber-500/20 text-amber-300 border-amber-500/40",
     SESSION: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+    DECISION: "bg-purple-500/20 text-purple-300 border-purple-500/40",
     SYSTEM: "bg-slate-800 text-slate-400 border-slate-700",
     OTHER: "bg-slate-800 text-slate-400 border-slate-700",
   };

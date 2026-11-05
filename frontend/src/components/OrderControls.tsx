@@ -21,6 +21,8 @@ interface OrderControlsProps {
   availableCash: number;
   currentPrice: number;
   pendingOrders: PendingOrder[];
+  isSessionGated?: boolean;
+  currency?: string;
   onPlaceOrder: (
     ticker: string,
     direction: "LONG" | "SHORT" | "AUTO",
@@ -53,6 +55,8 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
   availableCash,
   currentPrice,
   pendingOrders,
+  isSessionGated = false,
+  currency = "USD",
   onPlaceOrder,
   onPlaceBotTrade,
   onCancelPendingOrder,
@@ -61,6 +65,7 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
   onStepTick,
   onResetAccount,
 }) => {
+  const currencySym = currency === "INR" ? "₹" : "$";
   const [direction, setDirection] = useState<"LONG" | "SHORT" | "AUTO">("LONG");
   const [allocWeight, setAllocWeight] = useState<number>(10);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
@@ -211,7 +216,7 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
           <span className="text-slate-400">
             Available Cash:{" "}
             <span className="text-slate-200 font-semibold">
-              ${availableCash.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {currencySym}{availableCash.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
           </span>
         </div>
@@ -290,7 +295,7 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
           <div className="flex items-center justify-between text-slate-400">
             <span>Capital Allocation</span>
             <span className="text-sky-400 font-bold">
-              {allocWeight}% (~${approxCapital.toLocaleString(undefined, { maximumFractionDigits: 0 })},{" "}
+              {allocWeight}% (~{currencySym}{approxCapital.toLocaleString(undefined, { maximumFractionDigits: 0 })},{" "}
               {approxShares} shares)
             </span>
           </div>
@@ -341,19 +346,31 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
           )}
         </div>
 
+        {/* Session Gating Warning if execution is locked */}
+        {isSessionGated && (
+          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>Order execution gated: An active trading session is required to place orders.</span>
+          </div>
+        )}
+
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || isSessionGated}
           className={`w-full py-2 rounded-lg font-mono font-bold text-xs tracking-wider transition ${
-            direction === "LONG"
+            isSessionGated
+              ? "bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed opacity-60"
+              : direction === "LONG"
               ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40"
               : direction === "SHORT"
               ? "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40"
               : "bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40"
           } ${isSubmitting ? "opacity-50 cursor-wait" : ""}`}
         >
-          {isSubmitting
+          {isSessionGated
+            ? "EXECUTION GATED (ACTIVE SESSION REQUIRED)"
+            : isSubmitting
             ? "SUBMITTING..."
             : direction === "AUTO"
             ? `EXECUTE BOT AUTO-TRADE ${selectedTicker}`

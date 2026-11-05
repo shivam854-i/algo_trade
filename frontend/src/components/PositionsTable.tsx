@@ -12,6 +12,7 @@ import { OpenPosition, ClosedTrade } from "../types";
 interface PositionsTableProps {
   positions: OpenPosition[];
   closedTrades: ClosedTrade[];
+  currency?: string;
   onClosePosition: (id: number) => void;
   onFlattenAll: () => void;
 }
@@ -19,9 +20,11 @@ interface PositionsTableProps {
 export const PositionsTable: React.FC<PositionsTableProps> = ({
   positions,
   closedTrades,
+  currency = "USD",
   onClosePosition,
   onFlattenAll,
 }) => {
+  const currencySym = currency === "INR" ? "₹" : "$";
   const [activeTab, setActiveTab] = useState<"OPEN" | "CLOSED">("OPEN");
 
   // Calculate total unrealized PnL across all open positions
@@ -66,7 +69,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                   totalUnrealizedPnL >= 0 ? "text-emerald-400" : "text-rose-400"
                 }`}
               >
-                {totalUnrealizedPnL >= 0 ? "+" : ""}${totalUnrealizedPnL.toFixed(2)}
+                {totalUnrealizedPnL >= 0 ? "+" : ""}{currencySym}{totalUnrealizedPnL.toFixed(2)}
               </span>
             </div>
             <button
@@ -139,16 +142,16 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-2.5 text-slate-300">
-                        ${pos.entry_price.toFixed(2)}
+                        {currencySym}{pos.entry_price.toFixed(2)}
                       </td>
                       <td className="py-2.5 px-2.5 font-semibold text-slate-100">
-                        ${pos.current_price.toFixed(2)}
+                        {currencySym}{pos.current_price.toFixed(2)}
                       </td>
                       {/* Range slider visual */}
                       <td className="py-2.5 px-2.5 min-w-[140px]">
                         <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
-                          <span className="text-rose-400">${pos.stop_price.toFixed(1)}</span>
-                          <span className="text-emerald-400">${pos.target_price.toFixed(1)}</span>
+                          <span className="text-rose-400">{currencySym}{pos.stop_price.toFixed(1)}</span>
+                          <span className="text-emerald-400">{currencySym}{pos.target_price.toFixed(1)}</span>
                         </div>
                         <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden relative">
                           <div
@@ -160,7 +163,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                         </div>
                       </td>
                       <td className="py-2.5 px-2.5 text-slate-400 text-[11px]">
-                        <div>${pos.allocated_capital.toFixed(2)}</div>
+                        <div>{currencySym}{pos.allocated_capital.toFixed(2)}</div>
                         <div className="text-slate-500">{pos.shares.toFixed(4)} shares</div>
                       </td>
                       <td className="py-2.5 px-2.5">
@@ -174,7 +177,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                           ) : (
                             <TrendingDown className="w-3 h-3 mr-1" />
                           )}
-                          {isProfitable ? "+" : ""}${pos.unrealized_pnl.toFixed(2)}
+                          {isProfitable ? "+" : ""}{currencySym}{pos.unrealized_pnl.toFixed(2)}
                         </div>
                         <div
                           className={`text-[10px] ${
@@ -237,7 +240,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       </span>
                     </td>
                     <td className="py-2 px-2.5 text-slate-300">
-                      ${t.entry_price.toFixed(2)} ➔ ${t.exit_price.toFixed(2)}
+                      {currencySym}{t.entry_price.toFixed(2)} ➔ {currencySym}{t.exit_price.toFixed(2)}
                     </td>
                     <td className="py-2 px-2.5">
                       <span
@@ -245,10 +248,10 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                           isProfitable ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
-                        {isProfitable ? "+" : ""}${t.net_pnl.toFixed(2)} ({isProfitable ? "+" : ""}{t.return_pct.toFixed(2)}%)
+                        {isProfitable ? "+" : ""}{currencySym}{t.net_pnl.toFixed(2)} ({isProfitable ? "+" : ""}{t.return_pct.toFixed(2)}%)
                       </span>
                     </td>
-                    <td className="py-2 px-2.5 text-slate-400">${t.friction_fee.toFixed(2)}</td>
+                    <td className="py-2 px-2.5 text-slate-400">{currencySym}{t.friction_fee.toFixed(2)}</td>
                     <td className="py-2 px-2.5">
                       <span className="px-1.5 py-0.5 rounded bg-slate-800/80 text-[10px] text-slate-300">
                         {t.exit_reason}

@@ -189,6 +189,7 @@ export interface LogEntry {
   time?: string;
   level?: string;
   message?: string;
+  metadata?: DecisionMetadata | Record<string, any> | null;
 }
 
 export type LogItem = string | LogEntry;
@@ -206,6 +207,8 @@ export interface DashboardState {
   pending_orders?: PendingOrder[];
   order_history?: PendingOrder[];
   market_sessions?: Record<string, SessionStatusInfo>;
+  active_session?: TradingSession | null;
+  currency?: string;
 }
 
 export interface SessionStatusInfo {
@@ -267,3 +270,210 @@ export interface BotTradeResponse {
   bot_armed: boolean;
   dashboard_state?: DashboardState;
 }
+
+// ============================================================================
+// Milestone 3: Trading Session & Lifecycle Management Types
+// ============================================================================
+
+export type SessionMarket =
+  | "US_EQUITIES"
+  | "INDIAN_NSE"
+  | "CRYPTO"
+  | "COMMODITIES"
+  | "FOREX";
+
+export type SessionCurrency = "USD" | "INR";
+
+export type TradingHorizon = "1h" | "1d" | "1wk";
+
+export type DurationType = "FIXED" | "CUSTOM" | "MANUAL_STOP";
+
+export type SessionEndPolicy = "CLOSE_ALL" | "KEEP_OPEN";
+
+export type SessionStatus =
+  | "CREATED"
+  | "RUNNING"
+  | "PAUSED"
+  | "COMPLETED"
+  | "STOPPED";
+
+export interface SessionMetrics {
+  initial_capital: number;
+  current_cash: number;
+  invested_equity: number;
+  total_equity: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  total_trades?: number;
+  winning_trades?: number;
+  losing_trades?: number;
+  win_rate_pct?: number;
+  open_positions_count?: number;
+  currency?: string;
+}
+
+export interface TradingSession {
+  id: string;
+  user_id?: string;
+  account_id?: string;
+  name?: string | null;
+  market: SessionMarket | string;
+  instruments: string[];
+  horizon: TradingHorizon | string;
+  duration_type: DurationType | string;
+  duration_minutes?: number | null;
+  session_end_policy: SessionEndPolicy | string;
+  allocated_capital: number;
+  currency: SessionCurrency | string;
+  strategy_config?: Record<string, any>;
+  risk_config?: Record<string, any>;
+  status: SessionStatus | string;
+  created_at: string;
+  started_at?: string | null;
+  paused_at?: string | null;
+  resumed_at?: string | null;
+  ended_at?: string | null;
+  expires_at?: string | null;
+  accumulated_pause_seconds: number;
+  current_metrics?: SessionMetrics | Record<string, any>;
+  last_heartbeat_at?: string | null;
+  // Computed properties from server
+  is_active?: boolean;
+  is_running?: boolean;
+  is_paused?: boolean;
+  is_terminal?: boolean;
+  is_expired?: boolean;
+  remaining_seconds?: number | null;
+}
+
+export interface SessionCreatePayload {
+  name?: string;
+  market: SessionMarket | string;
+  instruments: string[];
+  horizon: TradingHorizon | string;
+  duration_type: DurationType | string;
+  duration_minutes?: number | null;
+  session_end_policy: SessionEndPolicy | string;
+  allocated_capital: number;
+  currency: SessionCurrency | string;
+  strategy_config?: Record<string, any>;
+  risk_config?: Record<string, any>;
+}
+
+export interface SessionUpdatePayload {
+  name?: string;
+  instruments?: string[];
+  horizon?: TradingHorizon | string;
+  duration_type?: DurationType | string;
+  duration_minutes?: number | null;
+  session_end_policy?: SessionEndPolicy | string;
+  allocated_capital?: number;
+  strategy_config?: Record<string, any>;
+  risk_config?: Record<string, any>;
+}
+
+export interface SessionStopPayload {
+  reason?: "MANUAL_STOP" | "USER_REQUEST" | "USER_MANUAL_STOP" | "RISK_HALT" | string;
+}
+
+export interface RecommendationRequest {
+  market: SessionMarket | string;
+  target_size?: number;
+  candidate_tickers?: string[] | null;
+}
+
+export interface CandidateEvaluation {
+  ticker: string;
+  market: string;
+  passed_all_gates: boolean;
+  data_quality_score: number;
+  missing_bar_ratio: number;
+  zero_volume_ratio: number;
+  adv: number;
+  adv_currency: string;
+  adv_threshold: number;
+  spread_bps: number;
+  annualized_volatility: number;
+  composite_score: number;
+  rejection_reasons: string[];
+  pass_details: Record<string, any>;
+  summary_rationale: string;
+}
+
+export interface SessionRecommendationResponse {
+  market: SessionMarket | string;
+  target_size: number;
+  selected_instruments: string[];
+  evaluations: Record<string, CandidateEvaluation>;
+  passed_count: number;
+  rejected_count: number;
+  summary_rationale: string;
+  timestamp_utc: string;
+}
+
+export interface SessionPerformance {
+  session_id: string;
+  name?: string;
+  status: SessionStatus | string;
+  market: SessionMarket | string;
+  currency: SessionCurrency | string;
+  horizon: TradingHorizon | string;
+  duration_type: DurationType | string;
+  duration_minutes?: number | null;
+  allocated_capital: number;
+  starting_capital: number;
+  current_cash: number;
+  invested_equity: number;
+  total_equity: number;
+  net_pnl: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
+  return_pct: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate_pct: number;
+  profit_factor: number;
+  open_positions_count: number;
+  is_active: boolean;
+  is_running: boolean;
+  is_expired: boolean;
+  remaining_seconds?: number | null;
+  accumulated_pause_seconds: number;
+  session_end_policy: SessionEndPolicy | string;
+}
+
+// Explainability Activity Feed Types
+export type DecisionAction = "ACCEPTED" | "REJECTED" | "HELD_IN_CASH" | string;
+
+export interface DecisionMetrics {
+  net_expectancy_pct?: number;
+  win_probability?: number;
+  conservative_win_prob?: number;
+  round_trip_friction_bps?: number;
+  entry_price?: number;
+  target_price?: number;
+  stop_price?: number;
+  payoff_ratio?: number;
+  allocation_weight_pct?: number;
+  allocated_capital?: number;
+  shares?: number;
+  currency?: string;
+  rejection_reason?: string;
+  total_candidates?: number;
+  qualifying_count?: number;
+  cash_weight_pct?: number;
+  portfolio_drawdown_pct?: number;
+  [key: string]: any;
+}
+
+export interface DecisionMetadata {
+  ticker: string;
+  action: DecisionAction;
+  headline: string;
+  summary: string;
+  factors: Record<string, string>;
+  metrics: DecisionMetrics;
+  timestamp_utc: string;
+}
+
