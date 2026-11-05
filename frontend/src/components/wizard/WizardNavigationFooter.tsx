@@ -5,6 +5,7 @@ import { WizardStepId } from "./types";
 interface WizardNavigationFooterProps {
   currentStep: WizardStepId;
   isSubmitting?: boolean;
+  isNextDisabled?: boolean;
   errorMessage?: string | null;
   onPrev: () => void;
   onNext: () => void;
@@ -15,6 +16,7 @@ interface WizardNavigationFooterProps {
 export const WizardNavigationFooter: React.FC<WizardNavigationFooterProps> = ({
   currentStep,
   isSubmitting = false,
+  isNextDisabled = false,
   errorMessage,
   onPrev,
   onNext,
@@ -62,7 +64,7 @@ export const WizardNavigationFooter: React.FC<WizardNavigationFooterProps> = ({
             <button
               type="button"
               onClick={onNext}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isNextDisabled}
               className="px-5 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono font-bold text-xs flex items-center space-x-1.5 shadow-md shadow-sky-500/20 transition disabled:opacity-50"
             >
               <span>Next</span>

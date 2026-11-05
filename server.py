@@ -55,7 +55,8 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing SYNAPSE-TITAN Neuro-Causal Engine...")
     engine = MarketPredictionEngine()
     backtest_engine = BacktestEngine()
-    live_bot = LiveBotController(engine=engine, broker=broker_engine)
+    mgr = _get_session_manager()
+    live_bot = LiveBotController(engine=engine, broker=broker_engine, session_manager=mgr)
     live_bot.initialize_market_state()
     logger.info("Engine and Autonomous Bot Controller warmed up and ready.")
     yield
@@ -153,6 +154,8 @@ def _get_live_bot() -> LiveBotController:
         mgr = _get_session_manager()
         live_bot = LiveBotController(engine=engine, broker=broker_engine, session_manager=mgr)
         live_bot.initialize_market_state()
+    elif getattr(live_bot, "session_manager", None) is None:
+        live_bot.session_manager = _get_session_manager()
     return live_bot
 
 

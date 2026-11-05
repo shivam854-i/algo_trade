@@ -55,23 +55,132 @@ export const INITIAL_WIZARD_STATE: WizardFormState = {
   submissionError: null,
 };
 
+// Standard approved commodity and forex standalone symbols matching backend session_manager.py:312-316
+export const COMMODITY_STANDALONE_SYMBOLS = ["GLD", "SLV", "USO", "UNG"] as const;
+export const FOREX_STANDALONE_SYMBOLS = ["DX-Y.NYB", "UUP"] as const;
+
+/**
+ * Validates ticker symbol syntax strictly according to market jurisdiction rules.
+ * Directly mirrors backend validation contracts in `src/execution/session_manager.py:304-320`.
+ *
+ * Rules:
+ * - US_EQUITIES: Alphanumeric only, 1-5 chars, NO dots (.), NO hyphens (-), NO equal signs (=).
+ * - INDIAN_NSE: 1-20 chars symbol strictly ending with .NS or .BO suffix.
+ * - CRYPTO: Standard crypto pair with 2-10 chars base symbol ending with -USD or -USDT.
+ * - COMMODITIES: Standard futures symbol ending with =F (e.g. GC=F) or approved commodity ETF (GLD, SLV, USO, UNG).
+ * - FOREX: 6 uppercase letters ending with =X (e.g. EURUSD=X) or approved FX index symbols (DX-Y.NYB, UUP).
+ */
 export function validateTickerForMarket(ticker: string, market: MarketType): boolean {
+  if (!ticker || typeof ticker !== "string") return false;
   const clean = ticker.trim().toUpperCase();
   if (!clean) return false;
-  if (market === "INDIAN_NSE") {
-    return clean.endsWith(".NS") || clean.endsWith(".BO");
+
+  switch (market) {
+    case "US_EQUITIES":
+      // Alphanumeric only, 1-5 chars, NO dots (.), NO hyphens (-), NO equal signs (=)
+      return /^[A-Z0-9]{1,5}$/.test(clean);
+
+    case "INDIAN_NSE":
+      // Must end with .NS or .BO (e.g. RELIANCE.NS, TCS.BO, 500325.BO)
+      return /^[A-Z0-9_&-]{1,20}\.(NS|BO)$/.test(clean);
+
+    case "CRYPTO":
+      // Must match standard crypto ticker patterns (-USD or -USDT suffix)
+      return /^[A-Z0-9]{2,10}-(USD|USDT)$/.test(clean);
+
+    case "COMMODITIES":
+      // Must end with =F (e.g. GC=F, SI=F) or match standard commodity symbol
+      return (
+        /^[A-Z0-9]{1,5}=F$/.test(clean) ||
+        (COMMODITY_STANDALONE_SYMBOLS as readonly string[]).includes(clean)
+      );
+
+    case "FOREX":
+      // 6 uppercase letters ending with =X (e.g. EURUSD=X) or recognized FX index
+      return (
+        /^[A-Z]{6}=X$/.test(clean) ||
+        (FOREX_STANDALONE_SYMBOLS as readonly string[]).includes(clean)
+      );
+
+    default:
+      return false;
   }
-  if (market === "CRYPTO") {
-    return clean.includes("-USD") || clean.includes("-USDT");
+}
+
+/**
+ * Pure standalone step validator for wizard forms.
+ */
+export function validateWizardStep(
+  step: WizardStepId | number,
+  currentState: WizardFormState
+): { isValid: boolean; errors: Record<string, string> } {
+  const errors: Record<string, string> = {};
+
+  if (step === 1) {
+    if (!currentState.market || !MARKET_CONFIGS[currentState.market as keyof typeof MARKET_CONFIGS]) {
+      errors.market = "Please select a supported market jurisdiction.";
+    }
+  } else if (step === 2) {
+    if (!currentState.instruments || currentState.instruments.length === 0) {
+      errors.instruments = "Please select at least 1 instrument to trade.";
+    } else if (currentState.instruments.length > 20) {
+      errors.instruments = "Maximum 20 instruments allowed per session.";
+    } else {
+      // Check ticker format validity
+      const invalidTickers = currentState.instruments.filter(
+        (t) => !validateTickerForMarket(t, currentState.market)
+      );
+      if (invalidTickers.length > 0) {
+        errors.instruments = `Invalid ticker format for ${currentState.market}: ${invalidTickers.join(", ")}`;
+      }
+    }
+  } else if (step === 3) {
+    if (!["1h", "1d", "1wk"].includes(currentState.horizon)) {
+      errors.horizon = "Please select a valid trading holding horizon (1h, 1d, 1wk).";
+    }
+  } else if (step === 4) {
+    if (!["FIXED", "CUSTOM", "MANUAL_STOP"].includes(currentState.durationType)) {
+      errors.duration = "Please select a valid duration type.";
+    } else if (currentState.durationType === "FIXED") {
+      if (!currentState.durationPresetMinutes || currentState.durationPresetMinutes <= 0) {
+        errors.duration = "Please select a duration preset.";
+      }
+    } else if (currentState.durationType === "CUSTOM") {
+      const mins = currentState.customDurationMinutes;
+      if (!mins || mins < 1 || mins > 10080) {
+        errors.duration = "Custom duration must be between 1 minute and 10,080 minutes (1 week).";
+      }
+    }
+    if (!["CLOSE_ALL", "KEEP_OPEN"].includes(currentState.sessionEndPolicy)) {
+      errors.sessionEndPolicy = "Please select a session-end position policy.";
+    }
+  } else if (step === 5) {
+    const capital = currentState.allocatedCapital;
+    if (typeof capital !== "number" || isNaN(capital) || capital <= 0) {
+      errors.capital = "Allocated virtual capital must be strictly positive.";
+    } else if (capital < 1000 || capital > 10000000) {
+      errors.capital = `Virtual capital must be between 1,000 and 10,000,000 ${currentState.currency}.`;
+    }
+    const expectedCurrency = currentState.market === "INDIAN_NSE" ? "INR" : "USD";
+    if (currentState.currency !== expectedCurrency) {
+      errors.currency = `Currency mismatch: Market ${currentState.market} requires ${expectedCurrency}.`;
+    }
   }
-  if (market === "COMMODITIES") {
-    return clean.includes("=F") || clean.length >= 2;
-  }
-  if (market === "FOREX") {
-    return clean.includes("=X") || clean.length === 6;
-  }
-  // US Equities
-  return /^[A-Z0-9.\-_]{1,12}$/.test(clean);
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
+}
+
+/**
+ * Boolean-returning convenience helper for standalone step validation.
+ */
+export function isWizardStepValid(
+  step: WizardStepId | number,
+  currentState: WizardFormState
+): boolean {
+  return validateWizardStep(step, currentState).isValid;
 }
 
 export function useWizardState(initialState: Partial<WizardFormState> = {}) {
@@ -81,67 +190,18 @@ export function useWizardState(initialState: Partial<WizardFormState> = {}) {
   });
 
   const validateStep = useCallback(
-    (step: WizardStepId, currentState = state): { isValid: boolean; errors: Record<string, string> } => {
-      const errors: Record<string, string> = {};
-
-      if (step === 1) {
-        if (!currentState.market || !MARKET_CONFIGS[currentState.market as keyof typeof MARKET_CONFIGS]) {
-          errors.market = "Please select a supported market jurisdiction.";
-        }
-      } else if (step === 2) {
-        if (!currentState.instruments || currentState.instruments.length === 0) {
-          errors.instruments = "Please select at least 1 instrument to trade.";
-        } else if (currentState.instruments.length > 20) {
-          errors.instruments = "Maximum 20 instruments allowed per session.";
-        } else {
-          // Check ticker format validity
-          const invalidTickers = currentState.instruments.filter(
-            (t) => !validateTickerForMarket(t, currentState.market)
-          );
-          if (invalidTickers.length > 0) {
-            errors.instruments = `Invalid ticker format for ${currentState.market}: ${invalidTickers.join(", ")}`;
-          }
-        }
-      } else if (step === 3) {
-        if (!["1h", "1d", "1wk"].includes(currentState.horizon)) {
-          errors.horizon = "Please select a valid trading holding horizon (1h, 1d, 1wk).";
-        }
-      } else if (step === 4) {
-        if (!["FIXED", "CUSTOM", "MANUAL_STOP"].includes(currentState.durationType)) {
-          errors.duration = "Please select a valid duration type.";
-        } else if (currentState.durationType === "FIXED") {
-          if (!currentState.durationPresetMinutes || currentState.durationPresetMinutes <= 0) {
-            errors.duration = "Please select a duration preset.";
-          }
-        } else if (currentState.durationType === "CUSTOM") {
-          const mins = currentState.customDurationMinutes;
-          if (!mins || mins < 1 || mins > 10080) {
-            errors.duration = "Custom duration must be between 1 minute and 10,080 minutes (1 week).";
-          }
-        }
-        if (!["CLOSE_ALL", "KEEP_OPEN"].includes(currentState.sessionEndPolicy)) {
-          errors.sessionEndPolicy = "Please select a session-end position policy.";
-        }
-      } else if (step === 5) {
-        const capital = currentState.allocatedCapital;
-        if (typeof capital !== "number" || isNaN(capital) || capital <= 0) {
-          errors.capital = "Allocated virtual capital must be strictly positive.";
-        } else if (capital < 1000 || capital > 10000000) {
-          errors.capital = `Virtual capital must be between 1,000 and 10,000,000 ${currentState.currency}.`;
-        }
-        const expectedCurrency = currentState.market === "INDIAN_NSE" ? "INR" : "USD";
-        if (currentState.currency !== expectedCurrency) {
-          errors.currency = `Currency mismatch: Market ${currentState.market} requires ${expectedCurrency}.`;
-        }
-      }
-
-      return {
-        isValid: Object.keys(errors).length === 0,
-        errors,
-      };
+    (step: WizardStepId | number, currentState = state) => {
+      return validateWizardStep(step, currentState);
     },
     [state]
   );
+
+  const resetWizard = useCallback((overrideState: Partial<WizardFormState> = {}) => {
+    setState({
+      ...INITIAL_WIZARD_STATE,
+      ...overrideState,
+    });
+  }, []);
 
   const goToStep = useCallback(
     (targetStep: WizardStepId) => {
@@ -241,6 +301,15 @@ export function useWizardState(initialState: Partial<WizardFormState> = {}) {
           validationErrors: { ...prev.validationErrors, instruments: "Maximum basket size of 20 reached." },
         };
       }
+      if (!validateTickerForMarket(clean, prev.market)) {
+        return {
+          ...prev,
+          validationErrors: {
+            ...prev.validationErrors,
+            instruments: `Invalid ticker format for ${prev.market}: "${clean}".`,
+          },
+        };
+      }
       return {
         ...prev,
         instruments: [...prev.instruments, clean],
@@ -322,11 +391,19 @@ export function useWizardState(initialState: Partial<WizardFormState> = {}) {
   }, []);
 
   const setAllocatedCapital = useCallback((allocatedCapital: number) => {
-    setState((prev) => ({
-      ...prev,
-      allocatedCapital,
-      validationErrors: { ...prev.validationErrors, capital: "" },
-    }));
+    setState((prev) => {
+      let capitalError = "";
+      if (typeof allocatedCapital !== "number" || isNaN(allocatedCapital) || allocatedCapital <= 0) {
+        capitalError = "Allocated virtual capital must be strictly positive.";
+      } else if (allocatedCapital < 1000 || allocatedCapital > 10000000) {
+        capitalError = `Virtual capital must be between 1,000 and 10,000,000 ${prev.currency}.`;
+      }
+      return {
+        ...prev,
+        allocatedCapital,
+        validationErrors: { ...prev.validationErrors, capital: capitalError },
+      };
+    });
   }, []);
 
   const setSessionName = useCallback((sessionName: string) => {
@@ -420,5 +497,6 @@ export function useWizardState(initialState: Partial<WizardFormState> = {}) {
     setSessionName,
     validateStep,
     submitLaunchSession,
+    resetWizard,
   };
 }

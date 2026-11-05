@@ -210,17 +210,20 @@ export const App: React.FC = () => {
       </main>
 
       {/* 6-Step Setup Wizard Modal */}
-      <TradingSessionWizardModal
-        isOpen={isWizardOpen}
-        marketSessions={state?.market_sessions}
-        onClose={() => setIsWizardOpen(false)}
-        onSessionStarted={(newSession) => {
-          refreshState();
-          if (newSession.instruments && newSession.instruments.length > 0) {
-            setSelectedTicker(newSession.instruments[0]);
-          }
-        }}
-      />
+      {isWizardOpen && (
+        <TradingSessionWizardModal
+          key={isWizardOpen ? "open" : "closed"}
+          isOpen={isWizardOpen}
+          marketSessions={state?.market_sessions}
+          onClose={() => setIsWizardOpen(false)}
+          onSessionStarted={(newSession) => {
+            refreshState();
+            if (newSession.instruments && newSession.instruments.length > 0) {
+              setSelectedTicker(newSession.instruments[0]);
+            }
+          }}
+        />
+      )}
 
       {/* Institutional Status Footer */}
       <footer className="glass-panel border-t border-slate-800/80 px-4 py-2.5 text-[11px] font-mono text-slate-500 flex flex-wrap items-center justify-between gap-3">

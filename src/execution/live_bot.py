@@ -239,9 +239,14 @@ class LiveBotController:
         if self.session_manager is not None:
             if self.active_session_id:
                 sess = self.session_manager.get_session(self.active_session_id)
-                if sess:
+                if sess and getattr(sess, "is_active", False):
                     return sess
-            return self.session_manager.get_active_session()
+                self.active_session_id = None
+            active = self.session_manager.get_active_session()
+            if active and getattr(active, "is_active", False):
+                self.active_session_id = active.id
+                return active
+            return None
         return self._active_session_mock
 
     def bind_horizon_parameters(self, horizon: str, market_type: str = "US") -> HorizonParameters:

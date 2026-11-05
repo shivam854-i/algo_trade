@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { X, Sparkles } from "lucide-react";
 import { WizardProgressHeader } from "./WizardProgressHeader";
 import { WizardNavigationFooter } from "./WizardNavigationFooter";
@@ -41,7 +41,18 @@ export const TradingSessionWizardModal: React.FC<TradingSessionWizardModalProps>
     setAllocatedCapital,
     setSessionName,
     submitLaunchSession,
+    resetWizard,
   } = useWizardState();
+
+  const prevIsOpenRef = useRef<boolean>(false);
+
+  // Trigger reset on isOpen transition: false -> true
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      resetWizard();
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, resetWizard]);
 
   if (!isOpen) {
     return null;
@@ -51,9 +62,22 @@ export const TradingSessionWizardModal: React.FC<TradingSessionWizardModalProps>
     const session = await submitLaunchSession();
     if (session) {
       onSessionStarted(session);
+      resetWizard();
       onClose();
     }
   };
+
+  const handleClose = () => {
+    resetWizard();
+    onClose();
+  };
+
+  const isStep5CapitalInvalid =
+    state.currentStep === 5 &&
+    (!state.allocatedCapital ||
+      isNaN(state.allocatedCapital) ||
+      state.allocatedCapital < 1000 ||
+      state.allocatedCapital > 10000000);
 
   const currentError =
     state.validationErrors.market ||
@@ -94,7 +118,7 @@ export const TradingSessionWizardModal: React.FC<TradingSessionWizardModalProps>
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
             aria-label="Close setup wizard"
           >
@@ -183,10 +207,11 @@ export const TradingSessionWizardModal: React.FC<TradingSessionWizardModalProps>
           <WizardNavigationFooter
             currentStep={state.currentStep}
             isSubmitting={state.isSubmitting}
+            isNextDisabled={isStep5CapitalInvalid}
             errorMessage={currentError}
             onPrev={prevStep}
             onNext={nextStep}
-            onCancel={onClose}
+            onCancel={handleClose}
             onSubmit={handleLaunch}
           />
         </div>

@@ -11,6 +11,8 @@ import { Step6Confirmation } from "../src/components/wizard/Step6Confirmation";
 import {
   useWizardState,
   validateTickerForMarket,
+  validateWizardStep,
+  isWizardStepValid,
   INITIAL_WIZARD_STATE,
 } from "../src/components/wizard/useWizardState";
 import { sessionApi } from "../src/services/sessionApi";
@@ -117,27 +119,60 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
       expect(html).toContain("Q: 98%");
     });
 
-    it("validates ticker syntax per market jurisdiction", () => {
-      // US Equities: AAPL is valid, RELIANCE.NS is invalid
+    it("validates ticker syntax per market jurisdiction and strictly blocks cross-market contamination", () => {
+      // US Equities: AAPL, NVDA, C, GOOGL are valid; foreign tickers are strictly invalid
       expect(validateTickerForMarket("AAPL", "US_EQUITIES")).toBe(true);
       expect(validateTickerForMarket("NVDA", "US_EQUITIES")).toBe(true);
+      expect(validateTickerForMarket("C", "US_EQUITIES")).toBe(true);
+      expect(validateTickerForMarket("GOOGL", "US_EQUITIES")).toBe(true);
+      expect(validateTickerForMarket("RELIANCE.NS", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("TCS.BO", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("BTC-USD", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("GC=F", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("EURUSD=X", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("TOOLONGTICKER", "US_EQUITIES")).toBe(false);
 
-      // Indian NSE: RELIANCE.NS is valid, AAPL is invalid
+      // Indian NSE: RELIANCE.NS, TCS.BO, 500325.BO are valid; foreign tickers are invalid
       expect(validateTickerForMarket("RELIANCE.NS", "INDIAN_NSE")).toBe(true);
       expect(validateTickerForMarket("TCS.BO", "INDIAN_NSE")).toBe(true);
+      expect(validateTickerForMarket("500325.BO", "INDIAN_NSE")).toBe(true);
       expect(validateTickerForMarket("AAPL", "INDIAN_NSE")).toBe(false);
+      expect(validateTickerForMarket("NVDA", "INDIAN_NSE")).toBe(false);
+      expect(validateTickerForMarket("BTC-USD", "INDIAN_NSE")).toBe(false);
+      expect(validateTickerForMarket("GC=F", "INDIAN_NSE")).toBe(false);
+      expect(validateTickerForMarket(".NS", "INDIAN_NSE")).toBe(false);
 
-      // Crypto: BTC-USD is valid, AAPL is invalid
+      // Crypto: BTC-USD, ETH-USDT, SOL-USD are valid; foreign tickers are invalid
       expect(validateTickerForMarket("BTC-USD", "CRYPTO")).toBe(true);
       expect(validateTickerForMarket("ETH-USDT", "CRYPTO")).toBe(true);
+      expect(validateTickerForMarket("SOL-USD", "CRYPTO")).toBe(true);
       expect(validateTickerForMarket("AAPL", "CRYPTO")).toBe(false);
+      expect(validateTickerForMarket("RELIANCE.NS", "CRYPTO")).toBe(false);
+      expect(validateTickerForMarket("GC=F", "CRYPTO")).toBe(false);
+      expect(validateTickerForMarket("-USD", "CRYPTO")).toBe(false);
 
-      // Commodities: GC=F is valid
+      // Commodities: GC=F, SI=F, CL=F, GLD, USO are valid; US equities (AAPL) are invalid
       expect(validateTickerForMarket("GC=F", "COMMODITIES")).toBe(true);
       expect(validateTickerForMarket("SI=F", "COMMODITIES")).toBe(true);
+      expect(validateTickerForMarket("CL=F", "COMMODITIES")).toBe(true);
+      expect(validateTickerForMarket("GLD", "COMMODITIES")).toBe(true);
+      expect(validateTickerForMarket("USO", "COMMODITIES")).toBe(true);
+      expect(validateTickerForMarket("AAPL", "COMMODITIES")).toBe(false);
+      expect(validateTickerForMarket("MSFT", "COMMODITIES")).toBe(false);
+      expect(validateTickerForMarket("RELIANCE.NS", "COMMODITIES")).toBe(false);
 
-      // Forex: EURUSD=X is valid
+      // Forex: EURUSD=X, GBPUSD=X, DX-Y.NYB, UUP are valid; arbitrary 6-letter words (GOOGLE, AMAZON) are invalid
       expect(validateTickerForMarket("EURUSD=X", "FOREX")).toBe(true);
+      expect(validateTickerForMarket("GBPUSD=X", "FOREX")).toBe(true);
+      expect(validateTickerForMarket("DX-Y.NYB", "FOREX")).toBe(true);
+      expect(validateTickerForMarket("UUP", "FOREX")).toBe(true);
+      expect(validateTickerForMarket("GOOGLE", "FOREX")).toBe(false);
+      expect(validateTickerForMarket("AMAZON", "FOREX")).toBe(false);
+      expect(validateTickerForMarket("AAPL", "FOREX")).toBe(false);
+
+      // Edge cases: empty string and whitespace
+      expect(validateTickerForMarket("", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("   ", "US_EQUITIES")).toBe(false);
     });
   });
 
@@ -218,6 +253,95 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
       expect(inrHtml).toMatch(/₹5,?00,?000/);
       expect(inrHtml).toContain("Min: ₹1,000");
       expect(inrHtml).toContain("Max: ₹10,000,000");
+      // Verify ₹25L preset (accommodates Indian 25,00,000 or standard 2,500,000 formatting)
+      expect(inrHtml).toMatch(/₹25,?00,?000|₹2,?500,?000/);
+    });
+
+    it("validates capital bounds, rejecting empty string, 0, negative, and below-minimum values (999)", () => {
+      // Empty string / NaN
+      const nanRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: NaN,
+      });
+      expect(nanRes.isValid).toBe(false);
+      expect(nanRes.errors.capital).toBe("Allocated virtual capital must be strictly positive.");
+      expect(isWizardStepValid(5, { ...INITIAL_WIZARD_STATE, allocatedCapital: NaN })).toBe(false);
+
+      // Zero capital ($0)
+      const zeroRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: 0,
+      });
+      expect(zeroRes.isValid).toBe(false);
+      expect(zeroRes.errors.capital).toBe("Allocated virtual capital must be strictly positive.");
+      expect(isWizardStepValid(5, { ...INITIAL_WIZARD_STATE, allocatedCapital: 0 })).toBe(false);
+
+      // Negative capital (-$500)
+      const negRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: -500,
+      });
+      expect(negRes.isValid).toBe(false);
+      expect(negRes.errors.capital).toBe("Allocated virtual capital must be strictly positive.");
+
+      // Below lower bound ($999)
+      const belowMinRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: 999,
+      });
+      expect(belowMinRes.isValid).toBe(false);
+      expect(belowMinRes.errors.capital).toContain("between 1,000 and 10,000,000 USD");
+
+      // Exact lower bound ($1,000) -> valid
+      const minRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: 1000,
+      });
+      expect(minRes.isValid).toBe(true);
+      expect(minRes.errors.capital).toBeUndefined();
+      expect(isWizardStepValid(5, { ...INITIAL_WIZARD_STATE, allocatedCapital: 1000 })).toBe(true);
+
+      // Exact upper bound ($10,000,000) -> valid
+      const maxRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: 10000000,
+      });
+      expect(maxRes.isValid).toBe(true);
+      expect(maxRes.errors.capital).toBeUndefined();
+
+      // Above upper bound ($10,000,001) -> invalid
+      const aboveMaxRes = validateWizardStep(5, {
+        ...INITIAL_WIZARD_STATE,
+        allocatedCapital: 10000001,
+      });
+      expect(aboveMaxRes.isValid).toBe(false);
+      expect(aboveMaxRes.errors.capital).toContain("between 1,000 and 10,000,000 USD");
+    });
+
+    it("renders error alert banner and out-of-range visual styling for invalid capital inputs", () => {
+      // Out-of-range value (999) triggers rose border styling
+      const outOfRangeHtml = ReactDOMServer.renderToString(
+        <Step5CapitalAllocation
+          allocatedCapital={999}
+          currency="USD"
+          errorMessage="Virtual capital must be between 1,000 and 10,000,000 USD."
+          onSetAllocatedCapital={() => {}}
+        />
+      );
+      expect(outOfRangeHtml).toContain("border-rose-500/80");
+      expect(outOfRangeHtml).toContain("Virtual capital must be between 1,000 and 10,000,000 USD.");
+
+      // Zero capital triggers rose border and strictly positive error message
+      const zeroHtml = ReactDOMServer.renderToString(
+        <Step5CapitalAllocation
+          allocatedCapital={0}
+          currency="USD"
+          errorMessage="Allocated virtual capital must be strictly positive."
+          onSetAllocatedCapital={() => {}}
+        />
+      );
+      expect(zeroHtml).toContain("border-rose-500/80");
+      expect(zeroHtml).toContain("Allocated virtual capital must be strictly positive.");
     });
   });
 

@@ -4,6 +4,7 @@ import ReactDOMServer from "react-dom/server";
 import {
   useWizardState,
   validateTickerForMarket,
+  validateWizardStep,
   INITIAL_WIZARD_STATE,
 } from "../src/components/wizard/useWizardState";
 import { Step1MarketSelection } from "../src/components/wizard/Step1MarketSelection";
@@ -22,64 +23,9 @@ function createWizardStateHelper(initialState = {}) {
     ...initialState,
   };
 
-  // Replicate validateStep from useWizardState
+  // Directly delegate to pure production validateWizardStep from useWizardState
   function validateStep(step: number, state = currentState) {
-    const errors: Record<string, string> = {};
-
-    if (step === 1) {
-      if (!state.market || !["US_EQUITIES", "INDIAN_NSE", "CRYPTO", "COMMODITIES", "FOREX"].includes(state.market)) {
-        errors.market = "Please select a supported market jurisdiction.";
-      }
-    } else if (step === 2) {
-      if (!state.instruments || state.instruments.length === 0) {
-        errors.instruments = "Please select at least 1 instrument to trade.";
-      } else if (state.instruments.length > 20) {
-        errors.instruments = "Maximum 20 instruments allowed per session.";
-      } else {
-        const invalidTickers = state.instruments.filter(
-          (t) => !validateTickerForMarket(t, state.market)
-        );
-        if (invalidTickers.length > 0) {
-          errors.instruments = `Invalid ticker format for ${state.market}: ${invalidTickers.join(", ")}`;
-        }
-      }
-    } else if (step === 3) {
-      if (!["1h", "1d", "1wk"].includes(state.horizon)) {
-        errors.horizon = "Please select a valid trading holding horizon (1h, 1d, 1wk).";
-      }
-    } else if (step === 4) {
-      if (!["FIXED", "CUSTOM", "MANUAL_STOP"].includes(state.durationType)) {
-        errors.duration = "Please select a valid duration type.";
-      } else if (state.durationType === "FIXED") {
-        if (!state.durationPresetMinutes || state.durationPresetMinutes <= 0) {
-          errors.duration = "Please select a duration preset.";
-        }
-      } else if (state.durationType === "CUSTOM") {
-        const mins = state.customDurationMinutes;
-        if (!mins || mins < 1 || mins > 10080) {
-          errors.duration = "Custom duration must be between 1 minute and 10,080 minutes (1 week).";
-        }
-      }
-      if (!["CLOSE_ALL", "KEEP_OPEN"].includes(state.sessionEndPolicy)) {
-        errors.sessionEndPolicy = "Please select a session-end position policy.";
-      }
-    } else if (step === 5) {
-      const capital = state.allocatedCapital;
-      if (typeof capital !== "number" || isNaN(capital) || capital <= 0) {
-        errors.capital = "Allocated virtual capital must be strictly positive.";
-      } else if (capital < 1000 || capital > 10000000) {
-        errors.capital = `Virtual capital must be between 1,000 and 10,000,000 ${state.currency}.`;
-      }
-      const expectedCurrency = state.market === "INDIAN_NSE" ? "INR" : "USD";
-      if (state.currency !== expectedCurrency) {
-        errors.currency = `Currency mismatch: Market ${state.market} requires ${expectedCurrency}.`;
-      }
-    }
-
-    return {
-      isValid: Object.keys(errors).length === 0,
-      errors,
-    };
+    return validateWizardStep(step, state);
   }
 
   function goToStep(targetStep: number) {
@@ -281,17 +227,32 @@ describe("Adversarial Stress Verification: 6-Step Setup Wizard", () => {
     });
 
     // ADVERSARIAL CHALLENGE: Verify whether Indian .NS/.BO tickers are rejected in US_EQUITIES
-    it("EMPIRICAL TEST: Check if validateTickerForMarket rejects Indian .NS in US_EQUITIES", () => {
+    it("strictly rejects Indian .NS/.BO tickers and foreign market tickers in US_EQUITIES", () => {
       const isRelianceValidInUS = validateTickerForMarket("RELIANCE.NS", "US_EQUITIES");
       const isTcsValidInUS = validateTickerForMarket("TCS.BO", "US_EQUITIES");
       
-      // Documenting the empirical behavior of validateTickerForMarket:
-      // Current regex /^[A-Z0-9.\-_]{1,12}$/ allows '.' so RELIANCE.NS is erroneously ACCEPTED in US_EQUITIES
-      console.log("[EMPIRICAL OBSERVATION] validateTickerForMarket('RELIANCE.NS', 'US_EQUITIES'):", isRelianceValidInUS);
-      console.log("[EMPIRICAL OBSERVATION] validateTickerForMarket('TCS.BO', 'US_EQUITIES'):", isTcsValidInUS);
-      
-      // If the code is buggy and returns true, this test exposes the flaw:
-      expect(isRelianceValidInUS).toBe(true); // Demonstrating the bug exists!
+      expect(isRelianceValidInUS).toBe(false);
+      expect(isTcsValidInUS).toBe(false);
+      expect(validateTickerForMarket("BTC-USD", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("GC=F", "US_EQUITIES")).toBe(false);
+      expect(validateTickerForMarket("EURUSD=X", "US_EQUITIES")).toBe(false);
+    });
+
+    it("strictly rejects cross-market foreign tickers in Crypto, Commodities, and Forex", () => {
+      // Crypto: reject US equities, commodities, forex
+      expect(validateTickerForMarket("AAPL", "CRYPTO")).toBe(false);
+      expect(validateTickerForMarket("RELIANCE.NS", "CRYPTO")).toBe(false);
+      expect(validateTickerForMarket("GC=F", "CRYPTO")).toBe(false);
+
+      // Commodities: reject standard equities and foreign tickers
+      expect(validateTickerForMarket("AAPL", "COMMODITIES")).toBe(false);
+      expect(validateTickerForMarket("MSFT", "COMMODITIES")).toBe(false);
+      expect(validateTickerForMarket("RELIANCE.NS", "COMMODITIES")).toBe(false);
+
+      // Forex: reject 6-letter English words and non-FX symbols
+      expect(validateTickerForMarket("GOOGLE", "FOREX")).toBe(false);
+      expect(validateTickerForMarket("AMAZON", "FOREX")).toBe(false);
+      expect(validateTickerForMarket("AAPL", "FOREX")).toBe(false);
     });
 
     it("prevents duplicate symbols in basket chips", () => {

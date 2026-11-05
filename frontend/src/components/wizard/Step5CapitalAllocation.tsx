@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Coins, ShieldCheck, AlertCircle } from "lucide-react";
 import { SessionCurrency } from "../../types";
 
@@ -10,7 +10,7 @@ interface Step5CapitalAllocationProps {
 }
 
 const USD_PRESETS = [10000, 25000, 50000, 100000, 500000];
-const INR_PRESETS = [50000, 100000, 500000, 1000000, 5000000];
+const INR_PRESETS = [50000, 100000, 500000, 1000000, 2500000, 5000000];
 
 export const Step5CapitalAllocation: React.FC<Step5CapitalAllocationProps> = ({
   allocatedCapital,
@@ -19,16 +19,40 @@ export const Step5CapitalAllocation: React.FC<Step5CapitalAllocationProps> = ({
   onSetAllocatedCapital,
 }) => {
   const [inputValue, setInputValue] = useState<string>(
-    allocatedCapital ? String(allocatedCapital) : "50000"
+    typeof allocatedCapital === "number" && !isNaN(allocatedCapital) && allocatedCapital > 0
+      ? String(allocatedCapital)
+      : ""
   );
 
   const presets = currency === "INR" ? INR_PRESETS : USD_PRESETS;
   const currencySymbol = currency === "INR" ? "₹" : "$";
 
+  // Synchronize local input string if allocatedCapital changes externally (e.g. preset clicked elsewhere or wizard reset)
+  useEffect(() => {
+    const parsedCurrent = parseFloat(inputValue);
+    if (
+      typeof allocatedCapital === "number" &&
+      !isNaN(allocatedCapital) &&
+      allocatedCapital > 0 &&
+      parsedCurrent !== allocatedCapital
+    ) {
+      setInputValue(String(allocatedCapital));
+    } else if (allocatedCapital === 0 && inputValue !== "" && parsedCurrent !== 0) {
+      setInputValue("");
+    }
+  }, [allocatedCapital]);
+
   const handleInputChange = (val: string) => {
     setInputValue(val);
-    const parsed = parseFloat(val);
-    if (!isNaN(parsed)) {
+    const trimmed = val.trim();
+    if (trimmed === "") {
+      onSetAllocatedCapital(0);
+      return;
+    }
+    const parsed = parseFloat(trimmed);
+    if (isNaN(parsed) || parsed <= 0) {
+      onSetAllocatedCapital(0);
+    } else {
       onSetAllocatedCapital(parsed);
     }
   };
@@ -38,7 +62,23 @@ export const Step5CapitalAllocation: React.FC<Step5CapitalAllocationProps> = ({
     onSetAllocatedCapital(amount);
   };
 
-  const isOutOfRange = allocatedCapital < 1000 || allocatedCapital > 10000000;
+  const getImmediateError = (): string | null => {
+    if (inputValue.trim() === "") {
+      return "Allocated virtual capital must be strictly positive.";
+    }
+    const parsed = parseFloat(inputValue);
+    if (isNaN(parsed) || parsed <= 0) {
+      return "Allocated virtual capital must be strictly positive.";
+    }
+    if (parsed < 1000 || parsed > 10000000) {
+      return `Virtual capital must be between 1,000 and 10,000,000 ${currency}.`;
+    }
+    return null;
+  };
+
+  const localError = getImmediateError();
+  const displayError = errorMessage || localError;
+  const isOutOfRange = Boolean(displayError);
 
   return (
     <div className="flex flex-col space-y-5">
@@ -52,10 +92,14 @@ export const Step5CapitalAllocation: React.FC<Step5CapitalAllocationProps> = ({
         </p>
       </div>
 
-      {errorMessage && (
-        <div className="px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center space-x-2">
+      {displayError && (
+        <div
+          role="alert"
+          aria-live="polite"
+          className="px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center space-x-2 animate-in fade-in duration-150"
+        >
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-          <span>{errorMessage}</span>
+          <span>{displayError}</span>
         </div>
       )}
 
