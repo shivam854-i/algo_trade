@@ -1,1 +1,0 @@
-# Explorer Survey Quant Directory
