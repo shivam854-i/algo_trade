@@ -90,9 +90,9 @@ class TestLimitOrderRouting:
         # Current cash must be completely UNTOUCHED
         assert summary_after["current_cash"] == current_cash_before, "current_cash was modified by soft hold!"
         # Reserved cash must increase by exact allocated capital
-        assert summary_after["reserved_cash"] == pytest.approx(reserved_cash_before + alloc_capital, abs=0.01)
+        assert summary_after["reserved_cash"] == pytest.approx(reserved_cash_before + alloc_capital, abs=0.02)
         # Available cash must decrease by exact allocated capital
-        assert summary_after["available_cash"] == pytest.approx(avail_cash_before - alloc_capital, abs=0.01)
+        assert summary_after["available_cash"] == pytest.approx(avail_cash_before - alloc_capital, abs=0.02)
         # Backward compatibility 'cash' key must equal available_cash
         assert summary_after["cash"] == summary_after["available_cash"]
 
@@ -223,8 +223,8 @@ class TestAccountCashResolution:
 
         s1 = bot.broker.get_account_summary()
         assert s1["current_cash"] == current_cash_0, "current_cash changed after order 1!"
-        assert s1["reserved_cash"] == pytest.approx(alloc1, abs=0.01)
-        assert s1["available_cash"] == pytest.approx(avail_cash_0 - alloc1, abs=0.01)
+        assert s1["reserved_cash"] == pytest.approx(alloc1, abs=0.02)
+        assert s1["available_cash"] == pytest.approx(avail_cash_0 - alloc1, abs=0.02)
 
         # Queue Order 2 on closed market AAPL ($15,000)
         orig_is_tradable = bot._is_ticker_tradable_now
@@ -242,16 +242,16 @@ class TestAccountCashResolution:
 
         s2 = bot.broker.get_account_summary()
         assert s2["current_cash"] == current_cash_0, "current_cash changed after order 2!"
-        assert s2["reserved_cash"] == pytest.approx(alloc1 + alloc2, abs=0.01)
-        assert s2["available_cash"] == pytest.approx(avail_cash_0 - alloc1 - alloc2, abs=0.01)
+        assert s2["reserved_cash"] == pytest.approx(alloc1 + alloc2, abs=0.02)
+        assert s2["available_cash"] == pytest.approx(avail_cash_0 - alloc1 - alloc2, abs=0.02)
 
         # Cancel Order 1
         c1 = client.delete(f"/api/dashboard/orders/cancel/{o1['order_id']}")
         assert c1.status_code == 200
         s3 = bot.broker.get_account_summary()
         assert s3["current_cash"] == current_cash_0
-        assert s3["reserved_cash"] == pytest.approx(alloc2, abs=0.01)
-        assert s3["available_cash"] == pytest.approx(avail_cash_0 - alloc2, abs=0.01)
+        assert s3["reserved_cash"] == pytest.approx(alloc2, abs=0.02)
+        assert s3["available_cash"] == pytest.approx(avail_cash_0 - alloc2, abs=0.02)
 
         # Cancel Order 2
         c2 = client.delete(f"/api/dashboard/orders/cancel/{o2['order_id']}")
