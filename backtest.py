@@ -138,7 +138,7 @@ def run_backtest_cli(
             )
         console.print(trades_table)
 
-    console.print("\n[dim]To view interactive equity charts and trade logs in browser, run: [bold]streamlit run app.py[/bold][/dim]\n")
+    console.print("\n[dim]To view interactive charts, telemetry, and trade logs in browser, run: [bold]python server.py[/bold][/dim]\n")
 
 
 if __name__ == "__main__":

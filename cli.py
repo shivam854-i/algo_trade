@@ -88,7 +88,7 @@ def run_cli_scan(tickers: list, period: str = "2y", interval: str = "1d"):
         )
 
     console.print(table)
-    console.print("\n[dim]Analysis complete. Launch the web dashboard via: [bold]streamlit run app.py[/bold][/dim]")
+    console.print("\n[dim]Analysis complete. Launch the terminal via: [bold]python server.py[/bold][/dim]")
 
 
 if __name__ == "__main__":

@@ -165,10 +165,7 @@ def serve_dashboard():
     dist_html = Path(__file__).resolve().parent / "frontend" / "dist" / "index.html"
     if dist_html.exists():
         return FileResponse(str(dist_html), media_type="text/html")
-    html_path = Path(__file__).resolve().parent / "static" / "index.html"
-    if html_path.exists():
-        return FileResponse(str(html_path), media_type="text/html")
-    return HTMLResponse("<h1>SYNAPSE-TITAN API ONLINE</h1>")
+    return HTMLResponse("<h1>SYNAPSE-TITAN API ONLINE</h1><p>Frontend production bundle not found. Run 'npm run build' inside frontend/ to build the terminal.</p>")
 
 
 @app.get("/api/health", tags=["System"])
