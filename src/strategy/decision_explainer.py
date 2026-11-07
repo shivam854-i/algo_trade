@@ -58,6 +58,10 @@ class DecisionExplainer:
         pt_gain_pct = abs((ev.target_price - ev.entry_price) / max(ev.entry_price, 1e-4)) * 100.0
         sl_loss_pct = abs((ev.entry_price - ev.stop_price) / max(ev.entry_price, 1e-4)) * 100.0
 
+        p_decimals = 4 if ev.entry_price < 10.0 else 2
+        pt_fmt = f"{ev.target_price:,.4f}" if p_decimals == 4 else f"{ev.target_price:,.2f}"
+        sl_fmt = f"{ev.stop_price:,.4f}" if p_decimals == 4 else f"{ev.stop_price:,.2f}"
+
         action_word = "BUY" if direction == "LONG" else ("SELL" if direction == "SHORT" else "ENTER")
         headline = f"{action_word} {ticker}: Net Expectancy +{ev_pct:.2f}% | Win Prob {win_prob:.1f}%"
         summary = (
@@ -65,7 +69,7 @@ class DecisionExplainer:
             f"after deducting {friction_bps:.1f} bps in statutory exchange fees, taxes, and Almgren-Chriss market impact. "
             f"Risk-scaled sizing authorizes {allocation.weight_pct:.1f}% allocation "
             f"({currency_symbol}{allocation.allocated_capital:,.2f} / {allocation.shares:g} units) "
-            f"with profit target {currency_symbol}{ev.target_price:,.2f} and stop loss {currency_symbol}{ev.stop_price:,.2f}."
+            f"with profit target {currency_symbol}{pt_fmt} and stop loss {currency_symbol}{sl_fmt}."
         )
 
         factors = {
@@ -82,9 +86,9 @@ class DecisionExplainer:
             "win_probability": round(ev.win_probability, 4),
             "conservative_win_prob": round(cons_prob / 100.0, 4),
             "round_trip_friction_bps": round(friction_bps, 1),
-            "entry_price": round(ev.entry_price, 2),
-            "target_price": round(ev.target_price, 2),
-            "stop_price": round(ev.stop_price, 2),
+            "entry_price": round(ev.entry_price, p_decimals),
+            "target_price": round(ev.target_price, p_decimals),
+            "stop_price": round(ev.stop_price, p_decimals),
             "payoff_ratio": round(b, 2),
             "allocation_weight_pct": round(allocation.weight_pct, 2),
             "allocated_capital": round(allocation.allocated_capital, 2),
@@ -117,7 +121,12 @@ class DecisionExplainer:
         win_prob = ev.win_probability * 100.0
         friction_bps = ev.round_trip_friction_pct * 100.0
 
-        reason = rejection_reason_override or opportunity.ineligible_reason or ev.rejection_reason or "Negative Net Expectancy"
+        default_reason = (
+            "Portfolio Kelly/Volatility Sizing Threshold Not Met"
+            if (ev.is_positive_ev and ev_pct >= ev.min_ev_hurdle_pct)
+            else "Negative Net Expectancy"
+        )
+        reason = rejection_reason_override or opportunity.ineligible_reason or ev.rejection_reason or default_reason
         reason_upper = reason.upper()
 
         if "CRISIS" in reason_upper or opportunity.regime_multiplier == 0.0:
@@ -134,6 +143,12 @@ class DecisionExplainer:
             summary = (
                 f"Rejected {direction} opportunity on {ticker}. Although gross probability is {win_prob:.1f}%, "
                 f"net mathematical expectancy is negative ({ev_pct:.2f}%) after deducting {friction_bps:.1f} bps in statutory fees."
+            )
+        elif ev.is_positive_ev and ev_pct >= ev.min_ev_hurdle_pct:
+            headline = f"SKIPPED {ticker}: Below Minimum Portfolio Weight (+{ev_pct:.2f}% EV)"
+            summary = (
+                f"Candidate {direction} on {ticker} passed Net EV hurdle (+{ev_pct:.2f}%), "
+                f"but Fractional Kelly / volatility-adjusted sizing fell below minimum portfolio allocation threshold ({reason})."
             )
         else:
             headline = f"REJECTED {ticker}: Insufficient Edge"

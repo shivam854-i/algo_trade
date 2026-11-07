@@ -1482,9 +1482,11 @@ class PaperBroker:
                 curr_price = float(getattr(raw_val, "last_price", pos.current_price or pos.entry_price))
                 bid_p = float(getattr(raw_val, "bid_price", 0.0)) or None
                 ask_p = float(getattr(raw_val, "ask_price", 0.0)) or None
-                open_p = float(getattr(raw_val, "day_open", 0.0)) or None
-                high_p = float(getattr(raw_val, "day_high", 0.0)) or None
-                low_p = float(getattr(raw_val, "day_low", 0.0)) or None
+                # LiveQuote day_open/day_high/day_low represent 24h session aggregates (including pre-entry history).
+                # Evaluating SL/TP against 24h day_low/day_high causes instant false stop-outs on newly opened positions.
+                open_p = None
+                high_p = None
+                low_p = None
                 mkt_ts = str(getattr(raw_val, "timestamp_utc", ""))
 
             if math.isnan(curr_price) or curr_price <= 0.0:
@@ -1793,13 +1795,18 @@ class PaperBroker:
                 closed.append(tr)
         return closed
 
-    def get_closed_trades(self, limit: int = 100) -> List[TradeLog]:
+    def get_closed_trades(self, limit: int = 100, session_id: Optional[str] = None) -> List[TradeLog]:
         """Retrieves history of verified completed virtual trades."""
         with self.ledger._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT * FROM trades WHERE account_id = ? ORDER BY id DESC LIMIT ?
-            """, (self.account_id, limit))
+            if session_id:
+                cursor.execute("""
+                    SELECT * FROM trades WHERE account_id = ? AND session_id = ? ORDER BY id DESC LIMIT ?
+                """, (self.account_id, session_id, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM trades WHERE account_id = ? ORDER BY id DESC LIMIT ?
+                """, (self.account_id, limit))
             rows = cursor.fetchall()
 
         trades = []

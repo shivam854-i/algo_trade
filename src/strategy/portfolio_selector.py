@@ -202,9 +202,14 @@ class PortfolioSelector:
             if f_star <= 0.0:
                 continue
 
-            # Volatility scalar
+            # Volatility scalar (adapt target vol ceiling for higher-volatility Crypto markets)
             annual_vol = float(ev.evaluation_metadata.get("annualized_vol", 0.20))
-            vol_scalar = min(1.0, self.target_vol / max(annual_vol, 0.05))
+            effective_target_vol = (
+                max(self.target_vol, 0.45)
+                if market_type.upper() == "CRYPTO"
+                else self.target_vol
+            )
+            vol_scalar = min(1.0, effective_target_vol / max(annual_vol, 0.05))
 
             w_raw = self.kelly_c * f_star * vol_scalar * dd_scalar
             w_capped = min(w_raw, self.max_cap)
@@ -264,6 +269,7 @@ class PortfolioSelector:
             shares_dict[opp.ticker] = shares
             total_allocated += actual_cap
 
+            p_decimals = 4 if (entry_p < 10.0 or market_type.upper() == "FOREX") else 2
             metrics = alloc_metrics.get(opp.ticker, {"f_star": 0.0, "vol_scalar": 1.0})
             alloc_items.append(
                 AllocationItem(
@@ -272,10 +278,10 @@ class PortfolioSelector:
                     weight=w,
                     weight_pct=round(w * 100, 2),
                     allocated_capital=actual_cap,
-                    entry_price=round(entry_p, 2),
+                    entry_price=round(entry_p, p_decimals),
                     shares=shares,
-                    target_price=round(opp.evaluation.target_price, 2),
-                    stop_price=round(opp.evaluation.stop_price, 2),
+                    target_price=round(opp.evaluation.target_price, p_decimals),
+                    stop_price=round(opp.evaluation.stop_price, p_decimals),
                     expected_net_ev_pct=round(
                         opp.evaluation.net_expectancy_pct, 2
                     ),
@@ -388,6 +394,7 @@ class PortfolioSelector:
             shares_dict[tk] = shares
             total_allocated += actual_cap
 
+            p_decimals = 4 if (entry_p < 10.0 or market_type.upper() == "FOREX") else 2
             alloc_items.append(
                 AllocationItem(
                     ticker=tk,
@@ -395,10 +402,10 @@ class PortfolioSelector:
                     weight=float(w),
                     weight_pct=round(float(w) * 100, 2),
                     allocated_capital=actual_cap,
-                    entry_price=round(entry_p, 2),
+                    entry_price=round(entry_p, p_decimals),
                     shares=shares,
-                    target_price=round(opp.evaluation.target_price, 2),
-                    stop_price=round(opp.evaluation.stop_price, 2),
+                    target_price=round(opp.evaluation.target_price, p_decimals),
+                    stop_price=round(opp.evaluation.stop_price, p_decimals),
                     expected_net_ev_pct=round(
                         opp.evaluation.net_expectancy_pct, 2
                     ),

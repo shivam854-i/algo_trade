@@ -224,12 +224,12 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
     return results;
   };
 
-  // Query backend `/api/dashboard/search` when user types or opens search bar
+  // Query backend `/api/dashboard/search` when user opens search bar or types a query
   useEffect(() => {
     const localList = buildLocalResults(searchQuery, activeTab);
     setSearchResults(localList);
 
-    if (!isSearchOpen && !searchQuery.trim()) return;
+    if (!isSearchOpen) return;
 
     let cancelled = false;
     const timer = window.setTimeout(async () => {
@@ -258,7 +258,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [searchQuery, activeTab, isSearchOpen, assets, armedTickers]);
+  }, [searchQuery, activeTab, isSearchOpen]);
 
   // Execute a 1-click Bot-Managed Trade from search bar or asset card
   const handleBotTradeClick = async (

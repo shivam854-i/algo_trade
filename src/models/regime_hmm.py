@@ -219,22 +219,23 @@ class MarketRegimeClassifier:
                 p_crisis = 0.80 if vol_t >= self.vol_p80 else (0.30 if vol_t >= self.vol_p40 else 0.05)
                 mapped_state = 2 if vol_t >= self.vol_p80 else (1 if vol_t >= self.vol_p40 else 0)
 
-            # Instantaneous tail-jump override (> 3.2x historical return std drop or extreme vol spike)
-            jump_crash = (ret_t < -3.2 * self.ret_std) or (vol_t > 1.35 * self.vol_p80)
+            # Instantaneous tail-jump override (> 3.5x historical return std drop or extreme vol spike)
+            jump_crash = (ret_t < -3.5 * self.ret_std) or (vol_t > 1.65 * self.vol_p80)
+            crisis_vol_breach = (p_crisis >= self.crisis_enter_prob) and (vol_t >= 1.45 * self.vol_p80)
 
-            if jump_crash or p_crisis >= self.crisis_enter_prob:
+            if jump_crash or crisis_vol_breach:
                 in_crisis_quarantine = True
                 quarantine_remaining = self.quarantine_bars
                 regimes[t] = 2
             elif in_crisis_quarantine:
-                if p_crisis <= self.crisis_exit_prob and quarantine_remaining <= 0:
+                if (p_crisis <= self.crisis_exit_prob or vol_t < self.vol_p80) and quarantine_remaining <= 0:
                     in_crisis_quarantine = False
                     regimes[t] = min(mapped_state, 1)
                 else:
                     quarantine_remaining -= 1
                     regimes[t] = 2
             else:
-                regimes[t] = min(mapped_state, 1) if p_crisis < self.crisis_enter_prob else 2
+                regimes[t] = min(mapped_state, 1) if not crisis_vol_breach else 2
 
         return pd.Series(regimes, index=df.index, name="Regime")
 

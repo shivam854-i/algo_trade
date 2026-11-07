@@ -211,8 +211,18 @@ class LiveBotController:
 
         self.comparison_series: List[Dict[str, float | str]] = []
         self.activity_log: List[Dict[str, Any]] = []
+        self.last_stop_loss_time: Dict[str, datetime] = {}
         self._sandbox_rng = np.random.default_rng(42)
         self._initialized = False
+
+    @staticmethod
+    def _price_decimals(price: Optional[float], jurisdiction: str = "", ticker: str = "") -> int:
+        """Determines appropriate display/barrier decimal precision (4 decimals for FX and sub-$10 assets)."""
+        if jurisdiction == "FOREX" or ticker.upper().endswith("=X"):
+            return 4
+        if price is not None and 0.0 < float(price) < 10.0:
+            return 4
+        return 2
 
     def attach_session_manager(self, session_manager: Any) -> None:
         """Attaches the persistent SessionManager instance."""
@@ -312,7 +322,7 @@ class LiveBotController:
 
         for tk, res in self.analyses.items():
             df_tail = res.recent_ohlcv.tail(45)
-            decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+            decimals = self._price_decimals(res.current_price, res.market_jurisdiction, tk)
             hist = []
             for idx, row in df_tail.iterrows():
                 label = idx.strftime("%b %d") if hasattr(idx, "strftime") else str(idx)
@@ -398,7 +408,7 @@ class LiveBotController:
                         self.analyses[tk] = res
                         if tk not in self.watchlist:
                             self.watchlist.append(tk)
-                        decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+                        decimals = self._price_decimals(res.current_price, res.market_jurisdiction, tk)
                         self.base_prices[tk] = float(res.current_price)
                         self.live_prices[tk] = round(float(res.current_price), decimals)
                         df_tail = res.recent_ohlcv.tail(45)
@@ -424,7 +434,7 @@ class LiveBotController:
                     self.analyses[tk] = res
                     if tk not in self.watchlist:
                         self.watchlist.append(tk)
-                    decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+                    decimals = self._price_decimals(res.current_price, res.market_jurisdiction, tk)
                     self.base_prices[tk] = float(res.current_price)
                     self.live_prices[tk] = round(float(res.current_price), decimals)
                     df_tail = res.recent_ohlcv.tail(45)
@@ -468,7 +478,7 @@ class LiveBotController:
             self.analyses[tk] = res
             if tk not in self.watchlist:
                 self.watchlist.append(tk)
-            decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+            decimals = self._price_decimals(res.current_price, res.market_jurisdiction, tk)
             self.base_prices[tk] = float(res.current_price)
             self.live_prices[tk] = round(float(res.current_price), decimals)
 
@@ -577,7 +587,7 @@ class LiveBotController:
             res = self.analyses.get(tk)
             tradable, sess = self._is_ticker_tradable_now(tk)
             curr_p = self.live_prices.get(tk, float(res.current_price) if res else None)
-            decimals = 4 if (res and res.market_jurisdiction == "FOREX") or tk.endswith("=X") else 2
+            decimals = self._price_decimals(curr_p, res.market_jurisdiction if res else "", tk)
 
             scored.append(
                 (
@@ -678,7 +688,7 @@ class LiveBotController:
 
         curr_p = self.live_prices.get(tk, float(res.current_price))
         q = self.latest_quotes.get(tk)
-        decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+        decimals = self._price_decimals(curr_p, res.market_jurisdiction, tk)
         vol_bar = max(res.volatility_cone.expected_vol_annualized / np.sqrt(252.0), 0.012)
 
         ord_type = (order_type or "MARKET").strip().upper()
@@ -900,6 +910,15 @@ class LiveBotController:
         else:
             approved_basket = set(self.armed_tickers)
 
+        # Auto-load any session instrument that is not yet in self.analyses (when engine is live-initialized)
+        if self.analyses:
+            for tk in list(approved_basket):
+                if tk not in self.analyses:
+                    try:
+                        self.ensure_ticker_loaded(tk, arm=True)
+                    except Exception as exc:
+                        logger.debug(f"Deferred loading session instrument {tk}: {exc}")
+
         # Steps 1, 2 & 3: Check exchange session status, fetch genuine market quotes, validate freshness
         for tk, res in self.analyses.items():
             sess = self.calendar.get_session_info(tk, simulation_mode=self.simulation_mode)
@@ -907,7 +926,7 @@ class LiveBotController:
             curr_state = sess.state
             self.last_known_market_states[tk] = curr_state
 
-            decimals = 4 if res.market_jurisdiction == "FOREX" else 2
+            decimals = self._price_decimals(res.current_price, res.market_jurisdiction, tk)
             prev_p = self.live_prices.get(tk, res.current_price)
 
             # Detect transition to OPEN from a closed/pre-market/weekend/holiday state
@@ -1011,11 +1030,16 @@ class LiveBotController:
                     continue
 
                 self.latest_quotes[tk] = quote
-                if quote.is_stale or quote.age_seconds > staleness_limit:
+                effective_staleness_limit = (
+                    max(staleness_limit, float(getattr(quote, "delay_minutes", 0.0)) * 60.0 + 300.0, 1200.0)
+                    if getattr(quote, "is_delayed", False)
+                    else staleness_limit
+                )
+                if quote.is_stale or quote.age_seconds > effective_staleness_limit:
                     stale_or_invalid_tickers.add(tk)
                     self.log_event(
                         "FEED",
-                        f"Stale quote detected for {tk} (age: {quote.age_seconds:.0f}s > limit {staleness_limit:.0f}s) — blocking new entries.",
+                        f"Stale quote detected for {tk} (age: {quote.age_seconds:.0f}s > limit {effective_staleness_limit:.0f}s) — blocking new entries.",
                     )
                 new_p = float(quote.last_price)
                 self.live_prices[tk] = round(new_p, decimals)
@@ -1049,6 +1073,8 @@ class LiveBotController:
 
         still_open, auto_closed = self.broker.update_and_audit_positions(quotes_for_audit)
         for tr in auto_closed:
+            if tr.exit_reason == "STOP_LOSS":
+                self.last_stop_loss_time[tr.ticker.upper()] = now_utc
             tag = "PROFIT" if tr.net_pnl >= 0 else "STOP"
             self.log_event(
                 tag,
@@ -1057,7 +1083,11 @@ class LiveBotController:
 
         # Steps 6, 7, 8 & 9: Refresh prediction analysis, check guardrails & staleness, size position, and submit virtual order
         summary = self.broker.get_account_summary()
-        current_dd_dec = float(summary.get("current_drawdown_pct", 0.0)) / 100.0
+        if active_session is not None and self.session_manager is not None:
+            sess_perf_pre = self.session_manager.compute_session_performance(active_session.id, self)
+            current_dd_dec = float(sess_perf_pre.get("current_drawdown_pct", 0.0)) / 100.0
+        else:
+            current_dd_dec = float(summary.get("current_drawdown_pct", 0.0)) / 100.0
 
         for tk, res in list(self.analyses.items()):
             q = self.latest_quotes.get(tk)
@@ -1073,7 +1103,7 @@ class LiveBotController:
             # Capital Boundary Enforcement
             if active_session is not None:
                 session_cap = float(active_session.allocated_capital)
-                current_invested = sum(p.allocated_capital for p in still_open)
+                current_invested = sum(p.allocated_capital for p in still_open if getattr(p, "session_id", None) in (active_session.id, None))
                 reserved_holds = float(summary.get("reserved_cash", 0.0))
                 remaining_session_cap = max(0.0, session_cap - current_invested - reserved_holds)
                 deployable_capital = min(available_cash, remaining_session_cap)
@@ -1094,11 +1124,16 @@ class LiveBotController:
                     continue
                 if self.broker.has_duplicate_order_or_position(tk):
                     continue
+                last_sl = self.last_stop_loss_time.get(tk)
+                if last_sl is not None:
+                    cooldown_bars = self.horizon_params.signal_cooldown_bars if self.horizon_params else 3
+                    if (now_utc - last_sl).total_seconds() < float(cooldown_bars) * 60.0:
+                        continue
                 tradable, _ = self._is_ticker_tradable_now(tk)
                 if not tradable:
                     continue
                 r = self.analyses[tk]
-                if r.regime.is_crisis:
+                if active_session is None and r.regime.is_crisis:
                     continue
                 eligible_candidate_tickers.append(tk)
 
@@ -1132,7 +1167,7 @@ class LiveBotController:
 
                     # 9a. Portfolio Allocation via PortfolioSelector
                     selector = PortfolioSelector(
-                        kelly_fraction=0.30,
+                        kelly_fraction=0.65,
                         target_annual_vol=0.15,
                         warning_drawdown=0.08,
                         max_kill_drawdown=0.15,
@@ -1157,16 +1192,24 @@ class LiveBotController:
 
                     # 9b. Explainable Activity Feed Logs
                     if alloc_result.is_100_percent_cash:
-                        explanation = DecisionExplainer.explain_portfolio_cash_fallback(
-                            total_candidates_evaluated=len(ranked_opps),
-                            rejection_summary=alloc_result.explanation,
-                            current_drawdown_pct=current_dd_dec * 100.0,
-                        )
-                        self.log_event(
-                            "DECISION",
-                            f"{explanation.headline} — {explanation.summary}",
-                            metadata=explanation.to_dict(),
-                        )
+                        # Only emit portfolio-level 100% cash preserved fallback when zero positions are currently open
+                        if len(still_open) == 0:
+                            explanation = DecisionExplainer.explain_portfolio_cash_fallback(
+                                total_candidates_evaluated=len(ranked_opps),
+                                rejection_summary=alloc_result.explanation,
+                                current_drawdown_pct=current_dd_dec * 100.0,
+                            )
+                            msg_text = f"{explanation.headline} — {explanation.summary}"
+                            last_decision_msg = next(
+                                (item.get("message") for item in self.activity_log if item.get("level") == "DECISION"),
+                                None,
+                            )
+                            if last_decision_msg != msg_text:
+                                self.log_event(
+                                    "DECISION",
+                                    msg_text,
+                                    metadata=explanation.to_dict(),
+                                )
                     else:
                         alloc_map = {item.ticker: item for item in alloc_result.allocations}
                         for opp in ranked_opps:
@@ -1189,7 +1232,7 @@ class LiveBotController:
                                 q = self.latest_quotes.get(tk)
                                 curr_p = self.live_prices[tk]
                                 direction = opp.direction
-                                decimals = 4 if r.market_jurisdiction == "FOREX" else 2
+                                decimals = self._price_decimals(curr_p, r.market_jurisdiction, tk)
 
                                 if q and q.is_valid:
                                     ref_entry_p = q.ask_price if direction == "LONG" else q.bid_price
@@ -1202,19 +1245,24 @@ class LiveBotController:
                                     mkt_ts = now_utc_iso
                                     is_stale_q = False
 
-                                pt_mult = self.horizon_params.pt_vol_mult if self.horizon_params else 1.4
-                                sl_mult = self.horizon_params.sl_vol_mult if self.horizon_params else 1.0
-                                ann_f = self.horizon_params.annualization_factor if self.horizon_params else np.sqrt(252.0)
-                                vol_fl = self.horizon_params.vol_floor_bar if self.horizon_params else 0.012
-
-                                vol_bar = max(r.volatility_cone.expected_vol_annualized / ann_f, vol_fl)
-
-                                if direction == "LONG":
-                                    pt_p = round(ref_entry_p * (1.0 + pt_mult * vol_bar), decimals)
-                                    sl_p = round(ref_entry_p * (1.0 - sl_mult * vol_bar), decimals)
+                                # Use the exact target/stop barriers approved by TradeEvaluator/PortfolioSelector
+                                # (scaled proportionally if bid/ask entry reference differs slightly from mid)
+                                if alloc_item.entry_price > 0 and alloc_item.target_price > 0 and alloc_item.stop_price > 0:
+                                    entry_scale = ref_entry_p / alloc_item.entry_price
+                                    pt_p = round(alloc_item.target_price * entry_scale, decimals)
+                                    sl_p = round(alloc_item.stop_price * entry_scale, decimals)
                                 else:
-                                    pt_p = round(ref_entry_p * (1.0 - pt_mult * vol_bar), decimals)
-                                    sl_p = round(ref_entry_p * (1.0 + sl_mult * vol_bar), decimals)
+                                    pt_mult = self.horizon_params.pt_vol_mult if self.horizon_params else 1.4
+                                    sl_mult = self.horizon_params.sl_vol_mult if self.horizon_params else 1.0
+                                    ann_f = self.horizon_params.annualization_factor if self.horizon_params else np.sqrt(252.0)
+                                    vol_fl = self.horizon_params.vol_floor_bar if self.horizon_params else 0.012
+                                    vol_bar = max(r.volatility_cone.expected_vol_annualized / ann_f, vol_fl)
+                                    if direction == "LONG":
+                                        pt_p = round(ref_entry_p * (1.0 + pt_mult * vol_bar), decimals)
+                                        sl_p = round(ref_entry_p * (1.0 - sl_mult * vol_bar), decimals)
+                                    else:
+                                        pt_p = round(ref_entry_p * (1.0 - pt_mult * vol_bar), decimals)
+                                        sl_p = round(ref_entry_p * (1.0 + sl_mult * vol_bar), decimals)
 
                                 alloc_cap_order = min(alloc_item.allocated_capital, deployable_capital)
                                 pos = self.broker.open_position(
@@ -1283,7 +1331,7 @@ class LiveBotController:
                     curr_p = self.live_prices[tk]
                     direction = "LONG" if r.meta_prediction.primary_direction >= 0 else "SHORT"
                     vol_bar = max(r.volatility_cone.expected_vol_annualized / np.sqrt(252.0), 0.012)
-                    decimals = 4 if r.market_jurisdiction == "FOREX" else 2
+                    decimals = self._price_decimals(curr_p, r.market_jurisdiction, tk)
 
                     if q and q.is_valid:
                         ref_entry_p = q.ask_price if direction == "LONG" else q.bid_price
@@ -1333,9 +1381,17 @@ class LiveBotController:
 
         # Step 10: Record Bot Equity (%) vs. Market Movement (%) point & emit state
         summary = self.broker.get_account_summary()
-        bot_ret = round(float(summary.get("total_return_pct", 0.0)), 3)
         mkt_ret = round(self._compute_market_return_pct(), 3)
-        bot_eq = round(float(summary.get("total_equity", 100000.0)), 2)
+
+        # Update Session Metrics in persistence layer using strictly session-isolated performance
+        if self.session_manager is not None and active_session is not None:
+            sess_perf = self.session_manager.compute_session_performance(active_session.id, self)
+            self.session_manager.update_session_metrics(active_session.id, sess_perf)
+            bot_ret = round(float(sess_perf.get("return_pct", 0.0)), 3)
+            bot_eq = round(float(sess_perf.get("total_equity", active_session.allocated_capital)), 2)
+        else:
+            bot_ret = round(float(summary.get("total_return_pct", 0.0)), 3)
+            bot_eq = round(float(summary.get("total_equity", 100000.0)), 2)
 
         self.comparison_series.append(
             {
@@ -1347,23 +1403,6 @@ class LiveBotController:
         )
         if len(self.comparison_series) > 60:
             self.comparison_series = self.comparison_series[-60:]
-
-        # Update Session Metrics in persistence layer
-        if self.session_manager is not None and active_session is not None:
-            open_pos = self.broker.get_open_positions()
-            invested_cap = sum(p.allocated_capital for p in open_pos)
-            unrealized = sum(p.unrealized_pnl for p in open_pos)
-            metrics_payload = {
-                "initial_capital": active_session.allocated_capital,
-                "current_cash": float(summary.get("current_cash", 0.0)),
-                "invested_equity": round(invested_cap, 2),
-                "total_equity": round(float(summary.get("current_cash", 0.0)) + invested_cap + unrealized, 2),
-                "realized_pnl": float(summary.get("realized_pnl", 0.0)),
-                "unrealized_pnl": round(unrealized, 2),
-                "open_positions_count": len(open_pos),
-                "currency": active_session.currency,
-            }
-            self.session_manager.update_session_metrics(active_session.id, metrics_payload)
 
         return self.get_dashboard_state()
 
@@ -1427,19 +1466,34 @@ class LiveBotController:
             self.initialize_market_state()
 
         summary = self.broker.get_account_summary()
-        open_positions = self.broker.get_open_positions()
-        closed_trades = self.broker.get_closed_trades(limit=30)
+        all_open_positions = self.broker.get_open_positions()
+        active_sess = self.get_active_session()
+
+        if active_sess is not None and self.session_manager is not None:
+            open_positions = [
+                p for p in all_open_positions
+                if getattr(p, "session_id", None) in (active_sess.id, None)
+            ]
+            closed_trades = self.broker.get_closed_trades(limit=30, session_id=active_sess.id)
+            sess_perf = self.session_manager.compute_session_performance(active_sess.id, self)
+            active_sess.current_metrics = sess_perf
+            bot_ret = round(float(sess_perf.get("return_pct", 0.0)), 2)
+        else:
+            open_positions = all_open_positions
+            closed_trades = self.broker.get_closed_trades(limit=30)
+            sess_perf = None
+            bot_ret = round(float(summary.get("total_return_pct", 0.0)), 2)
+
         audit = self.broker.get_performance_audit()
         feed_health = self.get_feed_health_summary()
 
         mkt_ret = round(self._compute_market_return_pct(), 2)
-        bot_ret = round(float(summary.get("total_return_pct", 0.0)), 2)
 
         assets_payload = {}
         for tk, res in self.analyses.items():
-            decimals = 4 if res.market_jurisdiction == "FOREX" else 2
             base_p = self.base_prices.get(tk, res.current_price)
             curr_p = self.live_prices.get(tk, res.current_price)
+            decimals = self._price_decimals(curr_p, res.market_jurisdiction, tk)
             move_pct = ((curr_p - base_p) / base_p * 100.0) if base_p > 0 else 0.0
             pred = res.meta_prediction
             active_pos = next((p for p in open_positions if p.ticker == tk), None)
@@ -1502,7 +1556,55 @@ class LiveBotController:
                 "price_series": self.price_series.get(tk, []),
             }
 
-        active_sess = self.get_active_session()
+        if sess_perf is not None and active_sess is not None:
+            sess_cap = float(sess_perf.get("allocated_capital", active_sess.allocated_capital))
+            sess_inv = float(sess_perf.get("invested_equity", 0.0))
+            sess_eq = float(sess_perf.get("total_equity", sess_cap))
+            sess_exp_pct = round((sess_inv / sess_eq * 100.0) if sess_eq > 0 else 0.0, 2)
+            wins_cnt = int(sess_perf.get("winning_trades", 0))
+            losses_cnt = int(sess_perf.get("losing_trades", 0))
+            tot_tr = int(sess_perf.get("total_trades", 0))
+            win_sum = sum(t.net_pnl for t in closed_trades if t.net_pnl > 0)
+            loss_sum = abs(sum(t.net_pnl for t in closed_trades if t.net_pnl <= 0))
+            pf = round((win_sum / loss_sum) if loss_sum > 0 else (2.0 if win_sum > 0 else 0.0), 2)
+            sess_audit = {
+                **audit,
+                "total_trades": tot_tr,
+                "winning_trades": wins_cnt,
+                "losing_trades": losses_cnt,
+                "win_rate_pct": float(sess_perf.get("win_rate_pct", 0.0)),
+                "profit_factor": pf,
+                "max_drawdown_pct": float(sess_perf.get("max_drawdown_pct", 0.0)),
+                "total_transaction_costs": float(sess_perf.get("total_transaction_costs", 0.0)),
+                "net_profit": float(sess_perf.get("realized_pnl", 0.0)),
+            }
+            account_payload = {
+                **summary,
+                "initial_capital": sess_cap,
+                "current_cash": float(sess_perf.get("current_cash", sess_cap)),
+                "available_cash": float(sess_perf.get("current_cash", sess_cap)),
+                "invested_equity": sess_inv,
+                "exposure_notional": sess_inv,
+                "exposure_pct": sess_exp_pct,
+                "total_equity": sess_eq,
+                "realized_pnl": float(sess_perf.get("realized_pnl", 0.0)),
+                "unrealized_pnl": float(sess_perf.get("unrealized_pnl", 0.0)),
+                "total_return_pct": bot_ret,
+                "max_drawdown_pct": float(sess_perf.get("max_drawdown_pct", 0.0)),
+                "current_drawdown_pct": float(sess_perf.get("current_drawdown_pct", 0.0)),
+                "total_transaction_costs": float(sess_perf.get("total_transaction_costs", 0.0)),
+                "open_positions_count": int(sess_perf.get("open_positions_count", len(open_positions))),
+                "market_return_pct": mkt_ret,
+                "alpha_vs_market_pct": round(bot_ret - mkt_ret, 2),
+                "audit": sess_audit,
+            }
+        else:
+            account_payload = {
+                **summary,
+                "market_return_pct": mkt_ret,
+                "alpha_vs_market_pct": round(bot_ret - mkt_ret, 2),
+                "audit": audit,
+            }
 
         return {
             "bot_status": {
@@ -1529,10 +1631,11 @@ class LiveBotController:
             "currency": active_sess.currency if active_sess else "USD",
             "data_feed_status": feed_health,
             "catalog": ASSET_CATALOG,
-            "account": {
+            "account": account_payload,
+            "global_account": {
                 **summary,
                 "market_return_pct": mkt_ret,
-                "alpha_vs_market_pct": round(bot_ret - mkt_ret, 2),
+                "alpha_vs_market_pct": round(float(summary.get("total_return_pct", 0.0)) - mkt_ret, 2),
                 "audit": audit,
             },
             "market_sessions": self.get_all_market_sessions(),

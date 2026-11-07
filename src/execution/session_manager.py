@@ -572,6 +572,13 @@ class SessionManager:
                 bot.broker.active_session_id = session_id
             if hasattr(bot, "bind_horizon_parameters"):
                 bot.bind_horizon_parameters(updated_session.horizon, market_type=updated_session.market)
+            if getattr(bot, "analyses", None) and hasattr(bot, "ensure_ticker_loaded"):
+                for tk in updated_session.instruments:
+                    if tk not in bot.analyses:
+                        try:
+                            bot.ensure_ticker_loaded(tk, arm=True)
+                        except Exception as exc:
+                            logger.debug(f"Deferred loading session instrument {tk}: {exc}")
             if hasattr(bot, "log_event"):
                 bot.log_event(
                     "SESSION",
@@ -671,15 +678,21 @@ class SessionManager:
             conn.commit()
 
         if bot is not None:
-            bot.is_running = False
-            bot.active_session_id = None
             if hasattr(bot, "broker"):
-                bot.broker.active_session_id = None
                 if session.session_end_policy == SessionEndPolicy.CLOSE_ALL.value:
                     live_prices = getattr(bot, "live_prices", {})
                     bot.broker.close_all_positions(live_prices, reason=f"SESSION_STOPPED_{reason}")
+                bot.broker.active_session_id = None
+            bot.is_running = False
+            bot.active_session_id = None
             if hasattr(bot, "log_event"):
                 bot.log_event("SESSION", f"Stopped Trading Session #{session_id} ({reason}). End policy '{session.session_end_policy}' executed.")
+
+        try:
+            final_metrics = self.compute_session_performance(session_id, bot)
+            self.update_session_metrics(session_id, final_metrics)
+        except Exception as exc:
+            logger.debug(f"Could not finalize metrics on stop_session #{session_id}: {exc}")
 
         updated = self.get_session(session_id)
         if updated is None:
@@ -714,18 +727,24 @@ class SessionManager:
             conn.commit()
 
         if bot is not None:
-            bot.is_running = False
-            bot.active_session_id = None
             if hasattr(bot, "broker"):
-                bot.broker.active_session_id = None
                 if session.session_end_policy == SessionEndPolicy.CLOSE_ALL.value:
                     live_prices = getattr(bot, "live_prices", {})
                     bot.broker.close_all_positions(live_prices, reason="SESSION_EXPIRED_CLOSE_ALL")
+                bot.broker.active_session_id = None
+            bot.is_running = False
+            bot.active_session_id = None
             if hasattr(bot, "log_event"):
                 bot.log_event(
                     "SESSION",
                     f"Session #{session.id} reached expiry at {session.expires_at}. Status: COMPLETED. Policy '{session.session_end_policy}' executed.",
                 )
+
+        try:
+            final_metrics = self.compute_session_performance(session.id, bot)
+            self.update_session_metrics(session.id, final_metrics)
+        except Exception as exc:
+            logger.debug(f"Could not finalize metrics on expired session #{session.id}: {exc}")
 
         return self.get_session(session.id)
 
@@ -750,7 +769,7 @@ class SessionManager:
         # Query closed trades for this session strictly
         with self.ledger._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM trades WHERE session_id = ?", (session_id,))
+            cursor.execute("SELECT * FROM trades WHERE session_id = ? ORDER BY id ASC", (session_id,))
             closed_trades = cursor.fetchall()
 
             cursor.execute("SELECT * FROM positions WHERE status = 'OPEN' AND session_id = ?", (session_id,))
@@ -760,6 +779,10 @@ class SessionManager:
         winning_trades = sum(1 for t in closed_trades if float(t["net_pnl"]) > 0)
         losing_trades = sum(1 for t in closed_trades if float(t["net_pnl"]) < 0)
         realized_pnl = sum(float(t["net_pnl"]) for t in closed_trades)
+        total_tx_costs = sum(
+            float(t["friction_fee"] or 0.0) + float(t["slippage_cost"] or 0.0)
+            for t in closed_trades
+        )
 
         gross_profit = sum(float(t["net_pnl"]) for t in closed_trades if float(t["net_pnl"]) > 0)
         gross_loss = abs(sum(float(t["net_pnl"]) for t in closed_trades if float(t["net_pnl"]) < 0))
@@ -776,10 +799,12 @@ class SessionManager:
         # Invested and unrealized PnL from open positions
         invested_equity = 0.0
         unrealized_pnl = 0.0
+        live_prices = getattr(bot, "live_prices", {}) if bot is not None else {}
         for p in open_positions:
             alloc = float(p["allocated_capital"])
             invested_equity += alloc
-            last_p = float(p["last_price"]) if p["last_price"] else float(p["entry_price"])
+            tk = str(p["ticker"])
+            last_p = float(live_prices.get(tk) or p["last_price"] or p["entry_price"])
             entry_p = float(p["entry_price"])
             shares = float(p["shares"])
             if p["direction"] == "LONG":
@@ -789,9 +814,27 @@ class SessionManager:
 
         initial_cap = float(session.allocated_capital)
         current_cash = max(0.0, initial_cap + realized_pnl - invested_equity)
-        total_equity = current_cash + invested_equity + unrealized_pnl
+        total_equity = max(0.0, current_cash + invested_equity + unrealized_pnl)
         net_pnl = realized_pnl + unrealized_pnl
         return_pct = round((net_pnl / initial_cap) * 100.0, 2) if initial_cap > 0 else 0.0
+
+        # Compute isolated session peak-to-trough drawdown
+        running_eq = initial_cap
+        peak_eq = initial_cap
+        max_dd_pct = 0.0
+        for t in closed_trades:
+            running_eq = max(0.0, running_eq + float(t["net_pnl"]))
+            if running_eq > peak_eq:
+                peak_eq = running_eq
+            if peak_eq > 0:
+                dd_step = max(0.0, (peak_eq - running_eq) / peak_eq * 100.0)
+                if dd_step > max_dd_pct:
+                    max_dd_pct = dd_step
+
+        if total_equity > peak_eq:
+            peak_eq = total_equity
+        current_dd_pct = max(0.0, (peak_eq - total_equity) / peak_eq * 100.0) if peak_eq > 0 else 0.0
+        max_dd_pct = max(max_dd_pct, current_dd_pct)
 
         metrics = {
             "session_id": session.id,
@@ -802,6 +845,7 @@ class SessionManager:
             "horizon": session.horizon,
             "duration_type": session.duration_type,
             "duration_minutes": session.duration_minutes,
+            "initial_capital": initial_cap,
             "allocated_capital": initial_cap,
             "starting_capital": initial_cap,
             "current_cash": round(current_cash, 2),
@@ -816,6 +860,9 @@ class SessionManager:
             "losing_trades": losing_trades,
             "win_rate_pct": win_rate_pct,
             "profit_factor": profit_factor,
+            "total_transaction_costs": round(total_tx_costs, 2),
+            "current_drawdown_pct": round(current_dd_pct, 2),
+            "max_drawdown_pct": round(max_dd_pct, 2),
             "open_positions_count": len(open_positions),
             "is_active": session.is_active,
             "is_running": session.is_running,

@@ -126,18 +126,21 @@ export const SessionControls: React.FC<SessionControlsProps> = ({
         </button>
       )}
 
-      {/* 5. NEW SESSION WIZARD (When terminal or no session) */}
-      {isTerminal && (
-        <button
-          type="button"
-          onClick={onOpenWizard}
-          className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold flex items-center shadow-md shadow-sky-500/20 transition"
-          title="Configure and launch a new paper-trading session"
-        >
-          <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-          NEW SESSION
-        </button>
-      )}
+      {/* 5. NEW SESSION WIZARD (Always accessible to launch or reconfigure a session) */}
+      <button
+        type="button"
+        onClick={onOpenWizard}
+        disabled={disabled || isSubmitting}
+        className={
+          isTerminal
+            ? "px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold flex items-center shadow-md shadow-sky-500/20 transition disabled:opacity-50"
+            : "px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/40 font-semibold flex items-center transition disabled:opacity-50"
+        }
+        title="Configure and launch a new paper-trading session"
+      >
+        <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+        NEW SESSION
+      </button>
 
       {/* 6. SESSION HISTORY AUDIT LEDGER */}
       {onOpenHistory && (

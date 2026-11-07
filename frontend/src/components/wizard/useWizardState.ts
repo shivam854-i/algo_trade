@@ -456,6 +456,16 @@ export function useWizardState(initialState: Partial<WizardFormState> = {}) {
         risk_config: {},
       };
 
+      // 0. If an active session is currently running/paused, stop it cleanly before launching the new session
+      try {
+        const existingActive = await sessionApi.fetchActiveSession();
+        if (existingActive && (existingActive.status === "RUNNING" || existingActive.status === "PAUSED")) {
+          await sessionApi.stopSession(existingActive.id, "REPLACED_BY_NEW_SESSION");
+        }
+      } catch {
+        // Proceed if no active session or already stopped
+      }
+
       // 1. Create session
       const createdSession = await sessionApi.createSession(payload);
 

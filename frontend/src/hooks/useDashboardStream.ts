@@ -85,6 +85,7 @@ export function useDashboardStream({
   const isTabVisible = usePageVisibility();
   const pollTimerRef = useRef<number | null>(null);
   const isFetchingRef = useRef<boolean>(false);
+  const stateRef = useRef<DashboardState | null>(null);
 
   // Persistent Ring Buffers to eliminate GC churn
   // Chart ring buffer holds up to chartCapacity (500) items per selected ticker
@@ -155,6 +156,7 @@ export function useDashboardStream({
         throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
       }
       const data: DashboardState = await res.json();
+      stateRef.current = data;
       setState(data);
       setError(null);
       let activeTk = selectedTicker;
@@ -166,7 +168,11 @@ export function useDashboardStream({
         }
       }
       ingestStateIntoBuffers(data, activeTk);
-      fetchPendingOrders();
+      if (Array.isArray(data.pending_orders)) {
+        setPendingOrders(data.pending_orders);
+      } else {
+        fetchPendingOrders();
+      }
     } catch (err) {
       console.warn("Failed to fetch dashboard state:", err);
       setError(err instanceof Error ? err.message : "Network error");
@@ -189,10 +195,15 @@ export function useDashboardStream({
         const res = await fetch(url, { method: "POST" });
         if (!res.ok) throw new Error(`Step tick failed: ${res.status}`);
         const data: DashboardState = await res.json();
+        stateRef.current = data;
         setState(data);
         setError(null);
         ingestStateIntoBuffers(data, selectedTicker);
-        fetchPendingOrders();
+        if (Array.isArray(data.pending_orders)) {
+          setPendingOrders(data.pending_orders);
+        } else {
+          fetchPendingOrders();
+        }
       } catch (err) {
         console.warn("Error stepping tick:", err);
         setError(err instanceof Error ? err.message : "Step tick failed");
@@ -232,14 +243,16 @@ export function useDashboardStream({
 
     // Start background polling timer
     pollTimerRef.current = window.setInterval(() => {
-      setState((prev) => {
-        if (prev?.bot_status?.is_running && prev?.active_session?.status === "RUNNING") {
-          stepTick();
-        } else {
-          fetchState();
-        }
-        return prev;
-      });
+      const curr = stateRef.current;
+      const sessStatus = curr?.active_session?.status;
+      if (
+        (curr?.bot_status?.is_running && sessStatus === "RUNNING") ||
+        sessStatus === "PAUSED"
+      ) {
+        stepTick();
+      } else {
+        fetchState();
+      }
     }, pollIntervalMs);
 
     return () => {

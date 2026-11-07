@@ -194,7 +194,7 @@ class MarketPredictionEngine:
         if live_price is not None and live_price > 0 and float(df_clean["Close"].iloc[-1]) > 0:
             hist_close = float(df_clean["Close"].iloc[-1])
             scale = current_price / hist_close
-            decimals = 4 if market_type == "FOREX" else 2
+            decimals = 4 if (market_type == "FOREX" or current_price < 10.0) else 2
             meta_pred.target_price = round(float(meta_pred.target_price * scale), decimals)
             meta_pred.stop_price = round(float(meta_pred.stop_price * scale), decimals)
 
@@ -205,23 +205,27 @@ class MarketPredictionEngine:
         hardware_accel = "CUDA (NVIDIA RTX 4060)" if "CUDA" in dev_str else "AVX2 CPU (Multi-Core)"
 
         # Ensemble Fusion: 65% Causal Decision Trees + 35% Supervised Causal TCN
+        # Note: neural_prob is P(UP), so align with primary_direction (+1 LONG, -1 SHORT)
         lgbm_prob = meta_pred.success_probability
-        fused_prob = round(0.65 * lgbm_prob + 0.35 * neural_prob, 3)
+        aligned_neural_prob = (
+            float(neural_prob)
+            if meta_pred.primary_direction >= 0
+            else float(1.0 - neural_prob)
+        )
+        fused_prob = round(0.65 * lgbm_prob + 0.35 * aligned_neural_prob, 3)
 
-        # False Breakout & Bull/Bear Trap Veto Filters
-        if meta_pred.primary_direction == 1 and neural_prob < 0.42:
+        # False Breakout & Bull/Bear Trap Veto Filters (only on severe TCN disagreement < 0.35)
+        if meta_pred.primary_direction == 1 and neural_prob < 0.35:
             meta_pred.direction_label = "NEUTRAL / VETOED (FALSE BREAKOUT DETECTED)"
             meta_pred.bet_size = 0.0
             fused_prob = min(fused_prob, 0.48)
-        elif meta_pred.primary_direction == -1 and neural_prob > 0.58:
+        elif meta_pred.primary_direction == -1 and neural_prob > 0.65:
             meta_pred.direction_label = "NEUTRAL / VETOED (BEAR TRAP DETECTED)"
             meta_pred.bet_size = 0.0
             fused_prob = min(fused_prob, 0.48)
         else:
             # High-conviction agreement boost
-            if (meta_pred.primary_direction == 1 and neural_prob >= 0.60) or (
-                meta_pred.primary_direction == -1 and neural_prob <= 0.40
-            ):
+            if aligned_neural_prob >= 0.56:
                 meta_pred.bet_size = round(float(np.clip(meta_pred.bet_size * 1.25, -1.0, 1.0)), 3)
                 if "STRONG" not in meta_pred.direction_label and "BUY" in meta_pred.direction_label and fused_prob >= 0.65:
                     meta_pred.direction_label = "STRONG BUY"
@@ -327,23 +331,31 @@ class MarketPredictionEngine:
         if not np.isfinite(price_val) or price_val <= 0:
             return analysis
 
-        decimals = 4 if getattr(analysis, "market_jurisdiction", "") == "FOREX" else 2
+        decimals = 4 if (getattr(analysis, "market_jurisdiction", "") == "FOREX" or price_val < 10.0) else 2
         if not isinstance(analysis, SingleAssetAnalysis):
             analysis.current_price = round(float(price_val), decimals)
             return analysis
 
         dd = self.current_drawdown if current_drawdown is None else float(current_drawdown)
         prev_ref = analysis.current_price if analysis.current_price > 0 else price_val
-        scale = price_val / prev_ref
 
-        new_target = round(float(analysis.meta_prediction.target_price * scale), decimals)
-        new_stop = round(float(analysis.meta_prediction.stop_price * scale), decimals)
+        # Preserve unrounded barrier ratios on the first anchor to prevent cumulative rounding drift across ticks
+        base_target_ratio = getattr(analysis.meta_prediction, "_base_target_ratio", None)
+        base_stop_ratio = getattr(analysis.meta_prediction, "_base_stop_ratio", None)
+        if base_target_ratio is None or base_stop_ratio is None:
+            base_target_ratio = float(analysis.meta_prediction.target_price) / prev_ref if prev_ref > 0 else 1.0
+            base_stop_ratio = float(analysis.meta_prediction.stop_price) / prev_ref if prev_ref > 0 else 1.0
+
+        new_target = round(float(price_val * base_target_ratio), decimals)
+        new_stop = round(float(price_val * base_stop_ratio), decimals)
 
         updated_meta = replace(
             analysis.meta_prediction,
             target_price=new_target,
             stop_price=new_stop,
         )
+        setattr(updated_meta, "_base_target_ratio", base_target_ratio)
+        setattr(updated_meta, "_base_stop_ratio", base_stop_ratio)
 
         gross_alpha_pct = abs((new_target - price_val) / price_val * 100.0)
         passes_hurdle, friction_cost, net_alpha = FrictionEvaluator.validate_alpha_hurdle(

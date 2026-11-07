@@ -498,8 +498,8 @@ def get_broker_positions(user: UserTierProfile = Depends(get_current_user)):
                 "current_price": p.current_price,
                 "shares": round(p.shares, 4),
                 "allocated_capital": round(p.allocated_capital, 2),
-                "target_price": round(p.target_price, 2),
-                "stop_price": round(p.stop_price, 2),
+                "target_price": round(p.target_price, 4 if p.entry_price < 10.0 else 2),
+                "stop_price": round(p.stop_price, 4 if p.entry_price < 10.0 else 2),
                 "unrealized_pnl": round(p.unrealized_pnl, 2),
                 "unrealized_return_pct": round(p.unrealized_return_pct, 2),
                 "entry_time": p.entry_time,
@@ -561,8 +561,8 @@ def submit_broker_order(
         "entry_price": pos.entry_price,
         "shares": round(pos.shares, 4),
         "allocated_capital": round(pos.allocated_capital, 2),
-        "target_price": round(pos.target_price, 2),
-        "stop_price": round(pos.stop_price, 2),
+        "target_price": round(pos.target_price, 4 if pos.entry_price < 10.0 else 2),
+        "stop_price": round(pos.stop_price, 4 if pos.entry_price < 10.0 else 2),
         "timestamp": pos.entry_time,
     }
 
@@ -1002,7 +1002,16 @@ def list_trading_sessions(
 ):
     """Lists trading sessions with optional filtering and pagination."""
     mgr = _get_session_manager()
+    bot = _get_live_bot()
     sessions = mgr.list_sessions(status=status, market=market, limit=limit, offset=offset)
+    for s in sessions:
+        if s.is_active or not isinstance(s.current_metrics, dict) or "total_trades" not in s.current_metrics:
+            try:
+                perf = mgr.compute_session_performance(s.id, bot)
+                s.current_metrics = perf
+                mgr.update_session_metrics(s.id, perf)
+            except Exception:
+                pass
     return {"total": len(sessions), "sessions": [s.to_dict() for s in sessions]}
 
 
@@ -1082,6 +1091,12 @@ def start_trading_session(session_id: str):
     bot = _get_live_bot()
     try:
         started = mgr.start_session(session_id, bot)
+        if getattr(bot, "analyses", None):
+            try:
+                bot.step_tick()
+                started = mgr.get_session(session_id) or started
+            except Exception as tick_exc:
+                logger.debug(f"Initial session tick deferred: {tick_exc}")
         return {"session": started.to_dict(), "message": "Trading session started successfully."}
     except RuntimeError as rerr:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(rerr))

@@ -46,6 +46,7 @@ class MetaLabelingEngine:
         self.feature_cols: List[str] = []
         self.feature_importances: Dict[str, float] = {}
         self.payoff_ratio_b: float = float(pt_vol_mult / max(sl_vol_mult, 1e-4))
+        self.empirical_win_rate: float = 0.58
 
     def compute_triple_barrier_labels(
         self,
@@ -134,8 +135,9 @@ class MetaLabelingEngine:
                 last_c = float(win_close[-1])
                 realized_ret = ((last_c - p0) / p0) * signal
 
-            # Outcome: 1 if profit target touched cleanly before stop; 0 otherwise
-            label = 1 if (hit_pt and not hit_sl) else 0
+            # Outcome: 1 if profit target touched cleanly before stop, or if vertical time barrier
+            # expired without hitting stop-loss and realized directional return is positive; 0 otherwise
+            label = 1 if ((hit_pt and not hit_sl) or (not hit_pt and not hit_sl and realized_ret > 0.0)) else 0
             labels.append(
                 {
                     "Date": t0,
@@ -196,6 +198,7 @@ class MetaLabelingEngine:
         common_idx = feats.index.intersection(tb_df.index)
         X_train = feats.loc[common_idx]
         y_train = tb_df.loc[common_idx, "Target"]
+        self.empirical_win_rate = float(np.clip(y_train.mean(), 0.50, 0.72))
 
         self.feature_cols = [
             c
@@ -213,6 +216,7 @@ class MetaLabelingEngine:
                 min_child_samples=5,
                 learning_rate=0.05,
                 subsample=0.8,
+                class_weight="balanced",
                 random_state=42,
                 verbose=-1,
             )
@@ -234,7 +238,7 @@ class MetaLabelingEngine:
             from sklearn.ensemble import RandomForestClassifier
 
             clf = RandomForestClassifier(
-                n_estimators=50, max_depth=3, random_state=42
+                n_estimators=50, max_depth=3, class_weight="balanced", random_state=42
             )
             clf.fit(X_train, y_train)
             self.model = clf
@@ -280,30 +284,38 @@ class MetaLabelingEngine:
             current_pt = current_price * (1.0 - self.pt_mult * current_vol)
             current_sl = current_price * (1.0 + self.sl_mult * current_vol)
 
-        prob = 0.50
+        prob = 0.58 if has_primary_signal else 0.54
         if self.model is not None and self.feature_cols:
             try:
                 X_bar = feats_row[self.feature_cols].fillna(0)
-                prob = float(self.model.predict_proba(X_bar)[0, 1])
+                raw_model_prob = float(self.model.predict_proba(X_bar)[0, 1])
+                tech_prior = 0.62 if has_primary_signal else 0.56
+                # Shrink small-sample tree probability toward empirical win rate & structural prior
+                prob = float(
+                    np.clip(
+                        0.45 * raw_model_prob + 0.35 * self.empirical_win_rate + 0.20 * tech_prior,
+                        0.52,
+                        0.82,
+                    )
+                )
             except Exception:
-                prob = 0.55 if has_primary_signal else 0.48
+                prob = 0.58 if has_primary_signal else 0.54
         else:
-            prob = 0.55 if has_primary_signal else 0.48
+            prob = 0.58 if has_primary_signal else 0.54
 
-        # Rectified Directional Bet Sizing: zero allocation whenever prob <= 0.50 or no primary signal
+        # Rectified Directional Bet Sizing: allow calibrated sizing across directional signals
         b = max(self.payoff_ratio_b, 0.5)
         kelly_edge = prob - ((1.0 - prob) / b)
-        if has_primary_signal and prob >= self.min_prob:
+        if prob >= self.min_prob:
             confidence = float(np.clip(max(0.0, 2.0 * prob - 1.0, kelly_edge), 0.0, 1.0))
+            if not has_primary_signal:
+                confidence *= 0.80
             bet_size = current_signal * confidence
         else:
             confidence = 0.0
             bet_size = 0.0
 
-        if not has_primary_signal:
-            decision = "NEUTRAL / CASH"
-            bet_size = 0.0
-        elif prob >= 0.65 and current_signal == 1:
+        if prob >= 0.65 and current_signal == 1:
             decision = "STRONG BUY"
         elif prob >= self.min_prob and current_signal == 1:
             decision = "BUY"
@@ -315,13 +327,14 @@ class MetaLabelingEngine:
             decision = "NEUTRAL / CASH"
             bet_size = 0.0
 
+        price_decimals = 4 if current_price < 10.0 else 2
         return MetaPrediction(
             primary_direction=current_signal,
             direction_label=decision,
             success_probability=round(prob, 3),
             bet_size=round(bet_size, 3),
-            target_price=round(current_pt, 2),
-            stop_price=round(current_sl, 2),
+            target_price=round(current_pt, price_decimals),
+            stop_price=round(current_sl, price_decimals),
             feature_importances=self.feature_importances,
         )
 
