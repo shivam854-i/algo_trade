@@ -1,45 +1,53 @@
 # TradeBot: The Neuro-Causal Market Prediction Engine
-# Configuration Settings
+# Configuration Settings — Exclusively Indian Equity Markets (NSE & BSE)
 
 engine:
   name: "SYNAPSE-TITAN"
-  version: "1.0.0"
+  version: "2.0.0"
   random_seed: 42
+  base_currency: "INR"
+  timezone: "Asia/Kolkata"
 
-# Enabled Markets Governance (NSE-Only Focus)
+# Enabled Markets Governance (India-Only Focus)
 enabled_markets:
   - "NSE_CASH"
 
-# Default Universes for Multi-Asset Observation
+# Default Universes for Indian Equity Observation & Scanning
 universes:
-  us_equities:
-    - "AAPL"
-    - "NVDA"
-    - "MSFT"
-    - "TSLA"
-    - "SPY"
-    - "QQQ"
-  indian_equities:
+  nifty_50:
     - "RELIANCE.NS"
     - "TCS.NS"
-    - "INFY.NS"
     - "HDFCBANK.NS"
+    - "INFY.NS"
+    - "ICICIBANK.NS"
+    - "SBIN.NS"
+    - "BHARTIARTL.NS"
+    - "ITC.NS"
+    - "KOTAKBANK.NS"
+    - "LT.NS"
+  nifty_bank:
+    - "HDFCBANK.NS"
+    - "ICICIBANK.NS"
+    - "KOTAKBANK.NS"
+    - "SBIN.NS"
+    - "AXISBANK.NS"
+    - "INDUSINDBK.NS"
+  nifty_it:
+    - "TCS.NS"
+    - "INFY.NS"
+    - "HCLTECH.NS"
+    - "WIPRO.NS"
+    - "TECHM.NS"
+  bse_sensex:
+    - "RELIANCE.BO"
+    - "TCS.BO"
+    - "HDFCBANK.BO"
+    - "INFY.BO"
+    - "ICICIBANK.BO"
+  benchmarks:
     - "^NSEI"
-  crypto:
-    - "BTC-USD"
-    - "ETH-USD"
-    - "SOL-USD"
-  commodities:
-    - "GC=F"       # Gold Futures
-    - "SI=F"       # Silver Futures
-    - "CL=F"       # Crude Oil Futures
-    - "GLD"        # SPDR Gold Shares
-  forex:
-    - "EURUSD=X"   # Euro / US Dollar
-    - "GBPUSD=X"   # British Pound / US Dollar
-    - "USDJPY=X"   # US Dollar / Japanese Yen
-    - "USDINR=X"   # US Dollar / Indian Rupee
-    - "DX-Y.NYB"   # US Dollar Index
+    - "^BSESN"
+    - "^NSEBANK"
 
 # Data Ingestion Settings
 data:
@@ -76,25 +84,17 @@ risk:
   max_kill_drawdown: 0.15       # 15% Drawdown triggers hard cash liquidation
   max_gross_leverage: 1.5       # Maximum allowable gross exposure
 
-# Statutory Frictions & Fees
+# Statutory Frictions & Fees (Indian Capital Markets)
 frictions:
-  us:
-    sec_fee: 0.0000278
-    finra_taf: 0.000166
-    brokerage_per_share: 0.0005
-    taker_fee_bps: 2.0
   nse_cash:
-    stt_sell: 0.00025           # 0.025% on intraday sell
-    exchange_fee: 0.0000325
-    stamp_duty_buy: 0.00003
+    stt_sell: 0.00025           # 0.025% on intraday sell (0.1% delivery)
+    exchange_fee: 0.0000325     # NSE turnover charge
+    stamp_duty_buy: 0.00003     # 0.003% intraday stamp duty (0.015% delivery)
     gst_rate: 0.18              # 18% GST on brokerage + exchange
-    brokerage_bps: 3.0
-  crypto:
-    taker_fee_bps: 4.0
-    maker_rebate_bps: -1.0
-  forex:
-    spread_bps: 1.5             # ~1.5 pips average EUR/USD spread
-    commission_bps: 0.5
-  commodities:
-    futures_exchange_fee_bps: 1.0
-    brokerage_bps: 1.0
+    brokerage_bps: 3.0          # 0.03% max brokerage
+  bse_cash:
+    stt_sell: 0.00025           # 0.025% on intraday sell (0.1% delivery)
+    exchange_fee: 0.0000375     # BSE turnover charge
+    stamp_duty_buy: 0.00003     # 0.003% intraday stamp duty (0.015% delivery)
+    gst_rate: 0.18              # 18% GST on brokerage + exchange
+    brokerage_bps: 3.0          # 0.03% max brokerage

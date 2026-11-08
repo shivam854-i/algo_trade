@@ -63,26 +63,47 @@ export const NIFTY_50_TICKERS: string[] = [
   "INDUSINDBK.NS",
 ];
 
+export const BSE_SENSEX_TICKERS: string[] = [
+  "RELIANCE.BO",
+  "TCS.BO",
+  "HDFCBANK.BO",
+  "INFY.BO",
+  "ICICIBANK.BO",
+  "SBIN.BO",
+  "BHARTIARTL.BO",
+  "ITC.BO",
+  "KOTAKBANK.BO",
+  "LT.BO",
+  "AXISBANK.BO",
+  "HINDUNILVR.BO",
+  "BAJFINANCE.BO",
+  "MARUTI.BO",
+  "ASIANPAINT.BO",
+  "HCLTECH.BO",
+  "SUNPHARMA.BO",
+  "TITAN.BO",
+  "ULTRACEMCO.BO",
+  "TATASTEEL.BO",
+  "NTPC.BO",
+  "POWERGRID.BO",
+  "M&M.BO",
+  "JSWSTEEL.BO",
+  "BAJAJFINSV.BO",
+  "NESTLEIND.BO",
+  "WIPRO.BO",
+  "TATACONSUM.BO",
+  "TECHM.BO",
+  "INDUSINDBK.BO",
+];
+
 export const MARKET_CONFIGS = {
   INDIAN_NSE: {
     currency: "INR" as const,
     defaultTickers: NIFTY_50_TICKERS,
   },
-  US_EQUITIES: {
-    currency: "USD" as const,
-    defaultTickers: ["NVDA", "AAPL", "MSFT", "AMZN", "GOOGL"],
-  },
-  CRYPTO: {
-    currency: "USD" as const,
-    defaultTickers: ["BTC-USD", "ETH-USD", "SOL-USD"],
-  },
-  COMMODITIES: {
-    currency: "USD" as const,
-    defaultTickers: ["GC=F", "SI=F", "CL=F"],
-  },
-  FOREX: {
-    currency: "USD" as const,
-    defaultTickers: ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
+  INDIAN_BSE: {
+    currency: "INR" as const,
+    defaultTickers: BSE_SENSEX_TICKERS,
   },
 };
 
@@ -108,55 +129,34 @@ export const INITIAL_WIZARD_STATE: WizardFormState = {
   submissionError: null,
 };
 
-// Standard approved commodity and forex standalone symbols matching backend session_manager.py:312-316
-export const COMMODITY_STANDALONE_SYMBOLS = ["GLD", "SLV", "USO", "UNG"] as const;
-export const FOREX_STANDALONE_SYMBOLS = ["DX-Y.NYB", "UUP"] as const;
-
 /**
- * Validates ticker symbol syntax strictly according to market jurisdiction rules.
- * Directly mirrors backend validation contracts in `src/execution/session_manager.py:304-320`.
- *
- * Rules:
- * - US_EQUITIES: Alphanumeric only, 1-5 chars, NO dots (.), NO hyphens (-), NO equal signs (=).
- * - INDIAN_NSE: 1-20 chars symbol strictly ending with .NS or .BO suffix.
- * - CRYPTO: Standard crypto pair with 2-10 chars base symbol ending with -USD or -USDT.
- * - COMMODITIES: Standard futures symbol ending with =F (e.g. GC=F) or approved commodity ETF (GLD, SLV, USO, UNG).
- * - FOREX: 6 uppercase letters ending with =X (e.g. EURUSD=X) or approved FX index symbols (DX-Y.NYB, UUP).
+ * Validates ticker symbol syntax strictly according to Indian market jurisdiction rules.
+ * Directly mirrors backend validation contracts in `src/execution/session_manager.py`.
  */
-export function validateTickerForMarket(ticker: string, market: MarketType): boolean {
+export function validateTickerForMarket(ticker: string, market: MarketType | string): boolean {
   if (!ticker || typeof ticker !== "string") return false;
   const clean = ticker.trim().toUpperCase();
   if (!clean) return false;
 
   switch (market) {
-    case "US_EQUITIES":
-      // Alphanumeric only, 1-5 chars, NO dots (.), NO hyphens (-), NO equal signs (=)
-      return /^[A-Z0-9]{1,5}$/.test(clean);
-
     case "INDIAN_NSE":
-      // Must end with .NS or .BO (e.g. RELIANCE.NS, TCS.BO, 500325.BO)
-      return /^[A-Z0-9_&-]{1,20}\.(NS|BO)$/.test(clean);
+    case "INDIAN_BSE":
+      return /^[A-Z0-9_&-]{1,20}\.(NS|BO)$/.test(clean) || clean.startsWith("^NSE") || clean.startsWith("^BS");
+
+    case "US_EQUITIES":
+      return /^[A-Z0-9]{1,5}$/.test(clean) && !clean.includes(".") && !clean.includes("-") && !clean.includes("=");
 
     case "CRYPTO":
-      // Must match standard crypto ticker patterns (-USD or -USDT suffix)
       return /^[A-Z0-9]{2,10}-(USD|USDT)$/.test(clean);
 
     case "COMMODITIES":
-      // Must end with =F (e.g. GC=F, SI=F) or match standard commodity symbol
-      return (
-        /^[A-Z0-9]{1,5}=F$/.test(clean) ||
-        (COMMODITY_STANDALONE_SYMBOLS as readonly string[]).includes(clean)
-      );
+      return /^[A-Z0-9]{1,5}=F$/.test(clean) || ["GLD", "SLV", "USO", "UNG"].includes(clean);
 
     case "FOREX":
-      // 6 uppercase letters ending with =X (e.g. EURUSD=X) or recognized FX index
-      return (
-        /^[A-Z]{6}=X$/.test(clean) ||
-        (FOREX_STANDALONE_SYMBOLS as readonly string[]).includes(clean)
-      );
+      return /^[A-Z]{6}=X$/.test(clean) || ["DX-Y.NYB", "UUP"].includes(clean);
 
     default:
-      return false;
+      return clean.endsWith(".NS") || clean.endsWith(".BO");
   }
 }
 

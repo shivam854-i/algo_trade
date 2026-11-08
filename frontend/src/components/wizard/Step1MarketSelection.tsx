@@ -11,7 +11,7 @@ interface Step1MarketSelectionProps {
 }
 
 interface MarketDefinition {
-  id: MarketType | "EU_EQUITIES";
+  id: MarketType;
   title: string;
   subtitle: string;
   currency: string;
@@ -25,8 +25,8 @@ interface MarketDefinition {
 const MARKETS: MarketDefinition[] = [
   {
     id: "INDIAN_NSE",
-    title: "Indian Equities",
-    subtitle: "NSE Nifty 50 Cash & Index Market",
+    title: "Indian Equities (NSE)",
+    subtitle: "NIFTY 50, Bank Nifty, Next 50 & Liquid Cash Equities",
     currency: "INR",
     currencySymbol: "₹",
     tradingHours: "09:15–15:30 IST",
@@ -34,7 +34,17 @@ const MARKETS: MarketDefinition[] = [
     isSupported: true,
   },
   {
-    id: "US_EQUITIES",
+    id: "INDIAN_BSE",
+    title: "Bombay Stock Exchange (BSE)",
+    subtitle: "BSE SENSEX 30, BSE 100 Blue-Chip Equities",
+    currency: "INR",
+    currencySymbol: "₹",
+    tradingHours: "09:15–15:30 IST",
+    sessionKey: "BSE_INDIA",
+    isSupported: true,
+  },
+  {
+    id: "US_EQUITIES" as any,
     title: "US Equities",
     subtitle: "NYSE & NASDAQ Tech & Liquid Equities",
     currency: "USD",
@@ -42,10 +52,10 @@ const MARKETS: MarketDefinition[] = [
     tradingHours: "09:30–16:00 ET",
     sessionKey: "US_MARKETS",
     isSupported: false,
-    disabledReason: "Disabled (NSE-Only Focus Active)",
+    disabledReason: "Disabled (India Terminal Focus)",
   },
   {
-    id: "CRYPTO",
+    id: "CRYPTO" as any,
     title: "Cryptocurrencies",
     subtitle: "BTC, ETH, SOL Institutional Feeds",
     currency: "USD",
@@ -53,38 +63,37 @@ const MARKETS: MarketDefinition[] = [
     tradingHours: "24/7/365 Continuous",
     sessionKey: "CRYPTO_247",
     isSupported: false,
-    disabledReason: "Disabled (NSE-Only Focus Active)",
+    disabledReason: "Disabled (India Terminal Focus)",
   },
   {
-    id: "COMMODITIES",
+    id: "COMMODITIES" as any,
     title: "Commodities",
-    subtitle: "Gold (GC=F), Silver (SI=F), Crude (CL=F)",
+    subtitle: "Gold, Silver, Crude Oil",
     currency: "USD",
     currencySymbol: "$",
     tradingHours: "23h/day Mon–Fri",
-    sessionKey: "CME_GLOBEX",
     isSupported: false,
-    disabledReason: "Disabled (NSE-Only Focus Active)",
+    disabledReason: "Disabled (India Terminal Focus)",
   },
   {
-    id: "FOREX",
+    id: "FOREX" as any,
     title: "Forex Majors",
-    subtitle: "EUR/USD, GBP/USD, USD/JPY ECN",
+    subtitle: "EUR/USD, GBP/USD, USD/JPY",
     currency: "USD",
     currencySymbol: "$",
-    tradingHours: "24/5 (Sun 17:00–Fri 17:00 ET)",
+    tradingHours: "24/5 continuous",
     isSupported: false,
-    disabledReason: "Disabled (NSE-Only Focus Active)",
+    disabledReason: "Disabled (India Terminal Focus)",
   },
   {
-    id: "EU_EQUITIES",
+    id: "EUROPEAN_EQUITIES" as any,
     title: "European Equities",
-    subtitle: "LSE / Euronext Blue-Chips",
+    subtitle: "LSE, Euronext, DAX Blue-Chip Equities",
     currency: "EUR",
     currencySymbol: "€",
     tradingHours: "08:00–16:30 GMT",
     isSupported: false,
-    disabledReason: "Disabled (Provider Integration Coming Soon)",
+    disabledReason: "Disabled (India Terminal Focus)",
   },
 ];
 

@@ -61,10 +61,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Paper Trading Safety Lock Badge */}
         <div
           className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 flex items-center space-x-1.5 font-semibold"
-          title="Strict Paper-Trading Mode: Virtual $100,000 balance. Real brokerage order submission is permanently disabled."
+          title="Strict Paper-Trading Mode: Virtual ₹5,00,000 balance. Real brokerage order submission is permanently disabled."
         >
           <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-          <span>PAPER TRADING • VIRTUAL ACCOUNT</span>
+          <span>PAPER TRADING • VIRTUAL ACCOUNT (₹)</span>
         </div>
 
         {/* Market Data Feed Mode & Connection Health Badge */}
@@ -76,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
               ? "bg-rose-500/15 border-rose-500/40 text-rose-300"
               : "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
           }`}
-          title={`Feed Provider: ${dataFeedStatus?.active_us_provider || dataFeedStatus?.provider || "Market Feed"}`}
+          title={`Feed Provider: ${dataFeedStatus?.provider || "NSE / BSE Direct Feed"}`}
         >
           <Radio className="w-3.5 h-3.5" />
           <span>

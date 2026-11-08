@@ -33,9 +33,9 @@ interface AssetSelectorProps {
   ) => Promise<BotTradeResponse>;
 }
 
-type CategoryTab = "ALL" | "NSE" | "US" | "COMMODITY" | "CRYPTO" | "FOREX";
+type CategoryTab = "ALL" | "NIFTY_50" | "BANK_NIFTY" | "NIFTY_IT" | "SENSEX";
 
-// Instant client-side fallback catalog so search suggestions work in 0ms even before API round-trip
+// Instant client-side fallback catalog populated exclusively with Indian equities (NSE & BSE)
 const FALLBACK_SEARCH_CATALOG: Array<{
   ticker: string;
   name: string;
@@ -43,51 +43,34 @@ const FALLBACK_SEARCH_CATALOG: Array<{
   exchange: string;
   sector: string;
 }> = [
-  { ticker: "NVDA", name: "NVIDIA Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors & AI" },
-  { ticker: "AAPL", name: "Apple Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Consumer Technology" },
-  { ticker: "MSFT", name: "Microsoft Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Cloud & Software" },
-  { ticker: "AMD", name: "Advanced Micro Devices Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
-  { ticker: "TSLA", name: "Tesla Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "EV & Robotics" },
-  { ticker: "AMZN", name: "Amazon.com Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Cloud & E-Commerce" },
-  { ticker: "GOOGL", name: "Alphabet Inc. (Google)", category: "US_EQUITIES", exchange: "NASDAQ", sector: "AI & Search" },
-  { ticker: "META", name: "Meta Platforms Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Social & AI" },
-  { ticker: "NFLX", name: "Netflix Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Streaming Media" },
-  { ticker: "AVGO", name: "Broadcom Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
-  { ticker: "PLTR", name: "Palantir Technologies Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Enterprise AI & Defense" },
-  { ticker: "COIN", name: "Coinbase Global Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Fintech & Crypto" },
-  { ticker: "CRM", name: "Salesforce Inc.", category: "US_EQUITIES", exchange: "NYSE", sector: "Enterprise Software" },
-  { ticker: "ORCL", name: "Oracle Corporation", category: "US_EQUITIES", exchange: "NYSE", sector: "Cloud Infrastructure" },
-  { ticker: "INTC", name: "Intel Corporation", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
-  { ticker: "MU", name: "Micron Technology Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Memory & Storage" },
-  { ticker: "ARM", name: "Arm Holdings plc", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Semiconductors" },
-  { ticker: "SMCI", name: "Super Micro Computer Inc.", category: "US_EQUITIES", exchange: "NASDAQ", sector: "AI Servers" },
-  { ticker: "JPM", name: "JPMorgan Chase & Co.", category: "US_EQUITIES", exchange: "NYSE", sector: "Banking & Finance" },
-  { ticker: "V", name: "Visa Inc.", category: "US_EQUITIES", exchange: "NYSE", sector: "Payments" },
-  { ticker: "SPY", name: "SPDR S&P 500 ETF Trust", category: "US_EQUITIES", exchange: "NYSE", sector: "Index ETF" },
-  { ticker: "QQQ", name: "Invesco QQQ Trust (NASDAQ-100)", category: "US_EQUITIES", exchange: "NASDAQ", sector: "Index ETF" },
-  { ticker: "RELIANCE.NS", name: "Reliance Industries Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Energy, Telecom & Retail" },
-  { ticker: "TCS.NS", name: "Tata Consultancy Services Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "IT Services" },
-  { ticker: "HDFCBANK.NS", name: "HDFC Bank Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Private Banking" },
-  { ticker: "INFY.NS", name: "Infosys Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "IT Services" },
-  { ticker: "ICICIBANK.NS", name: "ICICI Bank Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Private Banking" },
-  { ticker: "SBIN.NS", name: "State Bank of India (SBI)", category: "INDIAN_NSE", exchange: "NSE", sector: "PSU Banking" },
-  { ticker: "BHARTIARTL.NS", name: "Bharti Airtel Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Telecom" },
-  { ticker: "TATAMOTORS.NS", name: "Tata Motors Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Automobiles & EV" },
-  { ticker: "ITC.NS", name: "ITC Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "FMCG & Hospitality" },
-  { ticker: "LT.NS", name: "Larsen & Toubro Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Infrastructure & Engineering" },
-  { ticker: "BAJFINANCE.NS", name: "Bajaj Finance Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "NBFC & Finance" },
-  { ticker: "HAL.NS", name: "Hindustan Aeronautics Ltd.", category: "INDIAN_NSE", exchange: "NSE", sector: "Aerospace & Defense" },
-  { ticker: "BTC-USD", name: "Bitcoin (BTC / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Layer-1 Digital Asset" },
-  { ticker: "ETH-USD", name: "Ethereum (ETH / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Smart Contracts" },
-  { ticker: "SOL-USD", name: "Solana (SOL / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "High-Throughput L1" },
-  { ticker: "XRP-USD", name: "Ripple XRP (XRP / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Cross-Border Payments" },
-  { ticker: "DOGE-USD", name: "Dogecoin (DOGE / USD)", category: "CRYPTO", exchange: "CRYPTO 24/7", sector: "Digital Currency" },
-  { ticker: "GC=F", name: "Gold Futures (COMEX)", category: "COMMODITIES", exchange: "CME/COMEX", sector: "Precious Metals" },
-  { ticker: "SI=F", name: "Silver Futures (COMEX)", category: "COMMODITIES", exchange: "CME/COMEX", sector: "Precious Metals" },
-  { ticker: "CL=F", name: "WTI Crude Oil Futures", category: "COMMODITIES", exchange: "CME/NYMEX", sector: "Energy" },
-  { ticker: "EURUSD=X", name: "EUR / USD Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
-  { ticker: "GBPUSD=X", name: "GBP / USD Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
-  { ticker: "USDJPY=X", name: "USD / JPY Spot", category: "FOREX", exchange: "FX 24/5", sector: "G10 Currency Pair" },
+  { ticker: "RELIANCE.NS", name: "Reliance Industries Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Energy, Telecom & Retail" },
+  { ticker: "TCS.NS", name: "Tata Consultancy Services Ltd.", category: "NIFTY_IT", exchange: "NSE", sector: "IT Services & Consulting" },
+  { ticker: "HDFCBANK.NS", name: "HDFC Bank Ltd.", category: "BANK_NIFTY", exchange: "NSE", sector: "Banking & Financials" },
+  { ticker: "INFY.NS", name: "Infosys Ltd.", category: "NIFTY_IT", exchange: "NSE", sector: "IT & Digital Services" },
+  { ticker: "ICICIBANK.NS", name: "ICICI Bank Ltd.", category: "BANK_NIFTY", exchange: "NSE", sector: "Private Banking" },
+  { ticker: "SBIN.NS", name: "State Bank of India (SBI)", category: "BANK_NIFTY", exchange: "NSE", sector: "PSU Banking" },
+  { ticker: "BHARTIARTL.NS", name: "Bharti Airtel Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Telecommunications" },
+  { ticker: "TATAMOTORS.NS", name: "Tata Motors Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Automobiles & EV" },
+  { ticker: "ITC.NS", name: "ITC Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "FMCG, Cigarettes & Hotels" },
+  { ticker: "LT.NS", name: "Larsen & Toubro Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Infrastructure & EPC" },
+  { ticker: "KOTAKBANK.NS", name: "Kotak Mahindra Bank Ltd.", category: "BANK_NIFTY", exchange: "NSE", sector: "Private Banking" },
+  { ticker: "AXISBANK.NS", name: "Axis Bank Ltd.", category: "BANK_NIFTY", exchange: "NSE", sector: "Private Banking" },
+  { ticker: "HINDUNILVR.NS", name: "Hindustan Unilever Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "FMCG & Consumer Goods" },
+  { ticker: "BAJFINANCE.NS", name: "Bajaj Finance Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "NBFC & Consumer Lending" },
+  { ticker: "MARUTI.NS", name: "Maruti Suzuki India Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Automobiles" },
+  { ticker: "HCLTECH.NS", name: "HCL Technologies Ltd.", category: "NIFTY_IT", exchange: "NSE", sector: "IT Services & R&D" },
+  { ticker: "SUNPHARMA.NS", name: "Sun Pharmaceutical Industries", category: "NIFTY_50", exchange: "NSE", sector: "Pharmaceuticals" },
+  { ticker: "TITAN.NS", name: "Titan Company Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Jewelry & Luxury Goods" },
+  { ticker: "ULTRACEMCO.NS", name: "UltraTech Cement Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Cement & Building Materials" },
+  { ticker: "TATASTEEL.NS", name: "Tata Steel Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Steel & Metallurgy" },
+  { ticker: "NTPC.NS", name: "NTPC Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Power Generation" },
+  { ticker: "POWERGRID.NS", name: "Power Grid Corp of India Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Power Transmission" },
+  { ticker: "WIPRO.NS", name: "Wipro Ltd.", category: "NIFTY_IT", exchange: "NSE", sector: "IT Services & AI Solutions" },
+  { ticker: "HAL.NS", name: "Hindustan Aeronautics Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Aerospace & Defense" },
+  { ticker: "BEL.NS", name: "Bharat Electronics Ltd.", category: "NIFTY_50", exchange: "NSE", sector: "Defense Electronics" },
+  { ticker: "RELIANCE.BO", name: "Reliance Industries (BSE)", category: "SENSEX", exchange: "BSE", sector: "Energy & Conglomerate" },
+  { ticker: "TCS.BO", name: "TCS (BSE)", category: "SENSEX", exchange: "BSE", sector: "IT Services" },
+  { ticker: "HDFCBANK.BO", name: "HDFC Bank (BSE)", category: "SENSEX", exchange: "BSE", sector: "Banking" },
 ];
 
 export const AssetSelector: React.FC<AssetSelectorProps> = ({
@@ -151,11 +134,10 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
     const qUpper = q.trim().toUpperCase();
 
     const matched = FALLBACK_SEARCH_CATALOG.filter((item) => {
-      if (cat === "NSE" && item.category !== "INDIAN_NSE") return false;
-      if (cat === "US" && item.category !== "US_EQUITIES") return false;
-      if (cat === "COMMODITY" && item.category !== "COMMODITIES") return false;
-      if (cat === "CRYPTO" && item.category !== "CRYPTO") return false;
-      if (cat === "FOREX" && item.category !== "FOREX") return false;
+      if (cat === "NIFTY_50" && item.category !== "NIFTY_50") return false;
+      if (cat === "BANK_NIFTY" && item.category !== "BANK_NIFTY") return false;
+      if (cat === "NIFTY_IT" && item.category !== "NIFTY_IT") return false;
+      if (cat === "SENSEX" && item.category !== "SENSEX") return false;
 
       if (!qLower) return true;
       return (
@@ -178,7 +160,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
         is_armed: armedTickers.includes(item.ticker),
         has_open_position: Boolean(live?.has_open_position),
         current_price: live ? live.current_price : null,
-        decimals: live ? live.decimals : item.category === "FOREX" ? 4 : 2,
+        decimals: live ? live.decimals : 2,
         signal: live ? live.signal : null,
         primary_direction: live ? live.primary_direction : null,
         confidence_pct: live ? live.confidence_pct : null,
@@ -197,12 +179,13 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
       qUpper.length <= 18 &&
       !results.some((r) => r.ticker.toUpperCase() === qUpper)
     ) {
+      const canonicalTicker = qUpper.includes(".") ? qUpper : `${qUpper}.NS`;
       results.push({
-        ticker: qUpper,
-        name: `Load & Trade Custom Symbol '${qUpper}'`,
-        category: qUpper.endsWith(".NS") ? "INDIAN_NSE" : "US_EQUITIES",
-        exchange: qUpper.endsWith(".NS") ? "NSE" : "GLOBAL",
-        sector: "Direct Market Feed Lookup",
+        ticker: canonicalTicker,
+        name: `Load & Trade Indian Equity '${canonicalTicker}'`,
+        category: canonicalTicker.endsWith(".BO") ? "SENSEX" : "NIFTY_50",
+        exchange: canonicalTicker.endsWith(".BO") ? "BSE" : "NSE",
+        sector: "Indian Capital Markets",
         in_watchlist: false,
         is_armed: false,
         has_open_position: false,
@@ -352,25 +335,22 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
     if (activeTab === "ALL") return true;
 
     const tk = a.ticker.toUpperCase();
-    if (activeTab === "NSE") {
-      return tk.endsWith(".NS") || tk.endsWith(".BO") || a.jurisdiction === "INDIAN_NSE";
+    if (activeTab === "NIFTY_50") {
+      return tk.endsWith(".NS") && !tk.startsWith("^");
     }
-    if (activeTab === "US") {
+    if (activeTab === "BANK_NIFTY") {
       return (
-        !tk.includes("=") &&
-        !tk.includes("-") &&
-        !tk.endsWith(".NS") &&
-        !tk.endsWith(".BO")
+        tk.includes("BANK") ||
+        ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "KOTAKBANK.NS", "AXISBANK.NS", "INDUSINDBK.NS"].includes(tk)
       );
     }
-    if (activeTab === "COMMODITY") {
-      return tk.endsWith("=F") || a.jurisdiction === "COMMODITY";
+    if (activeTab === "NIFTY_IT") {
+      return (
+        ["TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "LTIM.NS"].includes(tk)
+      );
     }
-    if (activeTab === "CRYPTO") {
-      return tk.includes("-USD") || a.jurisdiction === "CRYPTO";
-    }
-    if (activeTab === "FOREX") {
-      return tk.endsWith("=X") || a.jurisdiction === "FOREX";
+    if (activeTab === "SENSEX") {
+      return tk.endsWith(".BO") || a.jurisdiction === "INDIAN_BSE";
     }
     return true;
   });
@@ -387,7 +367,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
               ref={searchInputRef}
               type="text"
               aria-label="Search stocks and place bot trade"
-              placeholder="Search any stock or company to trade with Bot (e.g. Apple, NVDA, Reliance, Palantir, TSLA, BTC)... [Press /]"
+              placeholder="Search Indian NSE / BSE equities (e.g. Reliance, TCS, HDFC Bank, Infosys, SBI)... [Press /]"
               value={searchQuery}
               onFocus={() => setIsSearchOpen(true)}
               onChange={(e) => {
@@ -659,11 +639,10 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
           {(
             [
               { id: "ALL", label: "All Monitored" },
-              { id: "US", label: "US Equities" },
-              { id: "NSE", label: "Indian Equities (NSE)" },
-              { id: "CRYPTO", label: "Crypto 24/7" },
-              { id: "COMMODITY", label: "Commodities" },
-              { id: "FOREX", label: "Forex" },
+              { id: "NIFTY_50", label: "Nifty 50" },
+              { id: "BANK_NIFTY", label: "Bank Nifty" },
+              { id: "NIFTY_IT", label: "Nifty IT" },
+              { id: "SENSEX", label: "BSE Sensex" },
             ] as const
           ).map((tab) => (
             <button

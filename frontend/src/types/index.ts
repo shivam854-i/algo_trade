@@ -272,17 +272,140 @@ export interface BotTradeResponse {
 }
 
 // ============================================================================
+// Navigation Tabs & View Routing
+// ============================================================================
+
+export type NavigationTab =
+  | "overview"
+  | "market-intelligence"
+  | "scanner"
+  | "trading-engine"
+  | "portfolio"
+  | "positions-orders"
+  | "strategy-lab"
+  | "risk-management"
+  | "analytics"
+  | "monitoring"
+  | "settings";
+
+export interface IndianBenchmarkInfo {
+  symbol: string;
+  name: string;
+  exchange: string;
+  category: string;
+  price: number;
+  change_pct: number;
+  high: number;
+  low: number;
+  volume: number;
+}
+
+export interface SectorPerformanceInfo {
+  sector: string;
+  change_pct: number;
+  lead: string;
+  sentiment: string;
+}
+
+export interface MarketIntelligenceData {
+  benchmarks: IndianBenchmarkInfo[];
+  sectors: SectorPerformanceInfo[];
+  market_breadth: {
+    advances: number;
+    declines: number;
+    unchanged: number;
+    total: number;
+    advance_decline_ratio: number;
+  };
+  trading_schedule: {
+    exchange: string;
+    timezone: string;
+    phases: { name: string; timing: string; description: string }[];
+    current_state: string;
+    countdown_display: string;
+    is_open: boolean;
+  };
+  holidays: { date: string; name: string; exchange: string }[];
+}
+
+export interface ScannerInstrument {
+  ticker: string;
+  name: string;
+  exchange: string;
+  sector: string;
+  current_price: number;
+  change_pct: number;
+  volume: number;
+  volatility_atr: number;
+  regime: string;
+  win_probability: number;
+  kelly_fraction: number;
+  r_r_ratio: number;
+  signal: string;
+  is_qualified: boolean;
+}
+
+export interface RiskMetricsData {
+  portfolio_equity_inr: number;
+  available_cash_inr: number;
+  invested_equity_inr: number;
+  var_95_pct: number;
+  var_95_inr: number;
+  var_99_pct: number;
+  var_99_inr: number;
+  cvar_95_inr: number;
+  current_drawdown_pct: number;
+  circuit_breaker_drawdown_limit_pct: number;
+  gross_leverage: number;
+  max_allowable_leverage: number;
+  kelly_multiplier: number;
+  sebi_rate_limit_orders_per_sec: number;
+  limit_price_protection_pct: number;
+  indian_frictions: {
+    stt_delivery_both_legs_pct: number;
+    stt_intraday_sell_leg_pct: number;
+    nse_exchange_turnover_charge_pct: number;
+    bse_exchange_turnover_charge_pct: number;
+    stamp_duty_buy_leg_delivery_pct: number;
+    sebi_turnover_charge_pct: number;
+    gst_rate_pct: number;
+    brokerage_cap_pct: number;
+    almgren_chriss_eta: number;
+  };
+}
+
+export interface PerformanceAnalyticsData {
+  summary: {
+    total_trades: number;
+    win_rate_pct: number;
+    profit_factor: number;
+    gross_pnl_inr: number;
+    total_friction_inr: number;
+    net_pnl_inr: number;
+    avg_win_inr: number;
+    avg_loss_inr: number;
+    sharpe_ratio: number;
+    sortino_ratio: number;
+    max_drawdown_pct: number;
+  };
+  returns_distribution: number[];
+  equity_series: ComparisonPoint[];
+  monthly_matrix: { year: number; month: string; return_pct: number }[];
+}
+
+// ============================================================================
 // Milestone 3: Trading Session & Lifecycle Management Types
 // ============================================================================
 
 export type SessionMarket =
-  | "US_EQUITIES"
   | "INDIAN_NSE"
+  | "INDIAN_BSE"
+  | "US_EQUITIES"
   | "CRYPTO"
   | "COMMODITIES"
   | "FOREX";
 
-export type SessionCurrency = "USD" | "INR";
+export type SessionCurrency = "INR" | "USD";
 
 export type TradingHorizon = "1h" | "1d" | "1wk";
 
