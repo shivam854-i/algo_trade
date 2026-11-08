@@ -180,7 +180,7 @@ export const SessionHistoryModal: React.FC<SessionHistoryModalProps> = ({
         <div className="px-6 py-3 border-b border-slate-800/80 bg-slate-950/40 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-slate-500 text-[11px]">Market:</span>
-            {["ALL", "US_EQUITIES", "INDIAN_NSE", "CRYPTO", "COMMODITIES", "FOREX"].map((m) => (
+            {["ALL", "INDIAN_NSE", "INDIAN_BSE"].map((m) => (
               <button
                 key={m}
                 type="button"

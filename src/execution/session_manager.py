@@ -44,6 +44,7 @@ class SessionEndPolicy(str, Enum):
 class SessionMarket(str, Enum):
     """Supported market jurisdictions."""
     INDIAN_NSE = "INDIAN_NSE"
+    INDIAN_BSE = "INDIAN_BSE"
     US_EQUITIES = "US_EQUITIES"
     CRYPTO = "CRYPTO"
     FOREX = "FOREX"
@@ -52,8 +53,8 @@ class SessionMarket(str, Enum):
 
 class SessionCurrency(str, Enum):
     """Supported virtual currencies."""
-    USD = "USD"
     INR = "INR"
+    USD = "USD"
 
 
 class TradingHorizon(str, Enum):
@@ -224,10 +225,12 @@ class SessionManager:
     def normalize_market(market: str) -> str:
         """Normalizes market string to canonical SessionMarket value."""
         m = str(market).strip().upper()
-        if m in ("US", "NYSE", "NASDAQ", "US_EQUITIES"):
-            return SessionMarket.US_EQUITIES.value
-        elif m in ("NSE", "NSE_CASH", "INDIAN_NSE", "INDIA"):
+        if m in ("NSE", "NSE_CASH", "INDIAN_NSE", "INDIA", "INDIAN_EQUITIES"):
             return SessionMarket.INDIAN_NSE.value
+        elif m in ("BSE", "BSE_CASH", "INDIAN_BSE"):
+            return SessionMarket.INDIAN_BSE.value
+        elif m in ("US", "NYSE", "NASDAQ", "US_EQUITIES"):
+            return SessionMarket.US_EQUITIES.value
         elif m in ("CRYPTO", "CRYPTOCURRENCY"):
             return SessionMarket.CRYPTO.value
         elif m in ("COMMODITY", "COMMODITIES", "CME"):
@@ -260,26 +263,19 @@ class SessionManager:
         session_end_policy: str,
     ) -> None:
         """Validates all session configuration parameters independently of frontend checks."""
-        # 1. Market validation
-        canonical_market = self.normalize_market(market)
-        valid_markets = [m.value for m in SessionMarket]
-        if canonical_market not in valid_markets:
-            raise ValueError(f"Unsupported market: '{market}'. Must be one of {valid_markets}")
-
-        # 2. Currency validation matching market
-        expected_currency = "INR" if canonical_market == SessionMarket.INDIAN_NSE.value else "USD"
-        if currency.upper() != expected_currency:
-            raise ValueError(
-                f"Currency mismatch: Market '{canonical_market}' requires currency '{expected_currency}', got '{currency}'"
-            )
-
-        # 3. Capital validation
+        # 1. Capital validation
         if allocated_capital is None:
             raise ValueError("Allocated capital cannot be None")
         try:
+            if isinstance(allocated_capital, bool):
+                raise ValueError(f"Invalid allocated capital: {allocated_capital}")
             cap_val = float(allocated_capital)
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid allocated capital: {allocated_capital}")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid allocated capital: {allocated_capital}") from e
+
+        import math
+        if math.isnan(cap_val) or math.isinf(cap_val):
+            raise ValueError(f"Capital cannot be NaN or Infinite: {cap_val}")
 
         if cap_val <= 0:
             raise ValueError(f"Allocated capital must be strictly positive, got {cap_val}")
@@ -289,6 +285,19 @@ class SessionManager:
         if not (min_cap <= cap_val <= max_cap):
             raise ValueError(
                 f"Allocated capital {cap_val:,.2f} outside allowed limits [{min_cap:,.0f}, {max_cap:,.0f}] {currency}"
+            )
+
+        # 2. Market validation
+        canonical_market = self.normalize_market(market)
+        valid_markets = [m.value for m in SessionMarket]
+        if canonical_market not in valid_markets:
+            raise ValueError(f"Unsupported market: '{market}'. Must be one of {valid_markets}")
+
+        # 3. Currency validation matching market
+        expected_currency = "INR" if canonical_market in (SessionMarket.INDIAN_NSE.value, SessionMarket.INDIAN_BSE.value) else "USD"
+        if currency.upper() != expected_currency:
+            raise ValueError(
+                f"Currency mismatch: Market '{canonical_market}' requires currency '{expected_currency}', got '{currency}'"
             )
 
         # 4. Instrument list validation
@@ -302,8 +311,8 @@ class SessionManager:
 
         # 5. Jurisdiction containment check
         for tk in unique_tickers:
-            if canonical_market == SessionMarket.INDIAN_NSE.value:
-                if not (tk.endswith(".NS") or tk.endswith(".BO")):
+            if canonical_market in (SessionMarket.INDIAN_NSE.value, SessionMarket.INDIAN_BSE.value):
+                if not (tk.endswith(".NS") or tk.endswith(".BO") or tk.startswith(("^NSE", "^BS"))):
                     raise ValueError(f"Ticker '{tk}' does not belong to market {canonical_market} (expected .NS or .BO suffix)")
             elif canonical_market == SessionMarket.CRYPTO.value:
                 if not (tk.endswith("-USD") or tk.endswith("-USDT")):

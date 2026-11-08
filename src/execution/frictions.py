@@ -52,6 +52,19 @@ PROFILES = {
         slippage_bps=2.0,
         impact_eta=0.45,
     ),
+    "BSE_CASH": MarketFrictionProfile(
+        jurisdiction="BSE_CASH",
+        stt_rate=0.00025,  # 0.025% STT on intraday sell
+        exchange_fee_rate=0.0000375,  # BSE turnover charge (0.00375%)
+        stamp_duty_rate=0.00003,  # 0.003% intraday Stamp duty on buy
+        gst_rate=0.18,  # 18% GST on brokerage + exchange + SEBI
+        brokerage_per_share=0.0003,  # 0.03% (3 bps) brokerage rate cap
+        taker_fee_rate=0.0,
+        delivery_stt_rate=0.001,  # 0.10% STT on BOTH buy and sell for multi-day delivery
+        delivery_stamp_rate=0.00015,  # 0.015% Stamp duty on buy for delivery
+        slippage_bps=2.2,
+        impact_eta=0.48,
+    ),
     "CRYPTO": MarketFrictionProfile(
         jurisdiction="CRYPTO",
         stt_rate=0.0,
@@ -94,9 +107,10 @@ class FrictionEvaluator:
     @classmethod
     def get_profile(cls, ticker: str) -> MarketFrictionProfile:
         ticker = ticker.upper()
-        if (
+        if ticker.endswith(".BO") or ticker.startswith(("^BS", "BSE:")):
+            return PROFILES.get("BSE_CASH", PROFILES["NSE_CASH"])
+        elif (
             ticker.endswith(".NS")
-            or ticker.endswith(".BO")
             or ticker.startswith("^NSE")
         ):
             return PROFILES["NSE_CASH"]
