@@ -195,20 +195,32 @@ class BacktestEngine:
         target_price = 0.0
         stop_price = 0.0
 
-        equity_curve = []
         trades: List[TradeRecord] = []
+
+        # Vectorized Input Arrays for zero-overhead loop access
+        close_arr = df_aligned["Close"].to_numpy(dtype=np.float64)
+        high_arr = df_aligned["High"].to_numpy(dtype=np.float64)
+        low_arr = df_aligned["Low"].to_numpy(dtype=np.float64)
+        dates_arr = df_aligned.index
+        regime_arr = regime_series.to_numpy(dtype=np.int64)
+        has_atr = "ATR_Pct" in feats.columns
+        atr_arr = feats["ATR_Pct"].to_numpy(dtype=np.float64) if has_atr else None
+
+        # Preallocate portfolio valuation buffer
+        sim_bars = n_bars - warmup_bars
+        equity_vals = np.empty(sim_bars, dtype=np.float64)
 
         # Walk-forward loop
         for t in range(warmup_bars, n_bars):
-            curr_date = df_aligned.index[t]
-            curr_close = float(df_aligned["Close"].iloc[t])
-            curr_high = float(df_aligned["High"].iloc[t])
-            curr_low = float(df_aligned["Low"].iloc[t])
-            curr_regime = int(regime_series.iloc[t])
+            curr_date = dates_arr[t]
+            curr_close = close_arr[t]
+            curr_high = high_arr[t]
+            curr_low = low_arr[t]
+            curr_regime = regime_arr[t]
 
             # Local volatility for barriers
-            if "ATR_Pct" in feats.columns and not pd.isna(feats["ATR_Pct"].iloc[t]):
-                local_vol = float(feats["ATR_Pct"].iloc[t])
+            if has_atr and np.isfinite(atr_arr[t]):
+                local_vol = float(atr_arr[t])
             else:
                 local_vol = 0.02
 
@@ -375,24 +387,24 @@ class BacktestEngine:
                 cash = equity
                 current_bar_equity = equity
 
-            equity_curve.append({"Date": curr_date, "Equity": current_bar_equity})
+            equity_vals[t - warmup_bars] = current_bar_equity
 
-        # --- Compute Final Metrics ---
-        eq_df = pd.DataFrame(equity_curve).set_index("Date")
-        eq_series = eq_df["Equity"]
+        # --- Compute Final Metrics (Vectorized) ---
+        eq_series = pd.Series(equity_vals, index=dates_arr[warmup_bars:], name="Equity")
 
-        final_equity = float(eq_series.iloc[-1])
+        final_equity = float(equity_vals[-1])
         total_return_pct = ((final_equity - self.initial_capital) / self.initial_capital) * 100.0
 
-        # Benchmark Buy & Hold
-        first_p = float(df_aligned["Close"].iloc[warmup_bars])
-        last_p = float(df_aligned["Close"].iloc[-1])
+        # Benchmark Buy & Hold (Vectorized)
+        first_p = float(close_arr[warmup_bars])
+        last_p = float(close_arr[-1])
         bnh_return_pct = ((last_p - first_p) / first_p) * 100.0
 
-        # Drawdown Series
-        peak = eq_series.cummax()
-        drawdowns = (peak - eq_series) / peak
-        max_dd_pct = float(drawdowns.max() * 100.0)
+        # Drawdown Series (Vectorized cumulative max)
+        peak_vals = np.maximum.accumulate(equity_vals)
+        drawdown_vals = (peak_vals - equity_vals) / peak_vals
+        max_dd_pct = float(np.max(drawdown_vals) * 100.0)
+        drawdowns = pd.Series(drawdown_vals, index=dates_arr[warmup_bars:], name="Drawdown")
 
         # Daily returns of equity curve
         daily_rets = eq_series.pct_change().dropna()
@@ -411,7 +423,7 @@ class BacktestEngine:
             sortino = 0.0
 
         # CAGR
-        days_span = max((df_aligned.index[-1] - df_aligned.index[warmup_bars]).days, 1)
+        days_span = max((dates_arr[-1] - dates_arr[warmup_bars]).days, 1)
         years = days_span / 365.25
         cagr = (
             float(((final_equity / self.initial_capital) ** (1.0 / max(years, 0.1)) - 1.0) * 100.0)
@@ -421,17 +433,25 @@ class BacktestEngine:
 
         calmar = (cagr / max_dd_pct) if max_dd_pct > 0 else 0.0
 
-        # Trade Analytics
+        # Trade Analytics (Vectorized)
         total_trades = len(trades)
-        winning_trades = sum(1 for tr in trades if tr.return_pct > 0)
-        losing_trades = sum(1 for tr in trades if tr.return_pct <= 0)
-        win_rate = (winning_trades / total_trades * 100.0) if total_trades > 0 else 0.0
+        if total_trades > 0:
+            rets_arr = np.array([tr.return_pct for tr in trades], dtype=np.float64)
+            pnl_arr = np.array([tr.net_pnl for tr in trades], dtype=np.float64)
+            winning_trades = int(np.count_nonzero(rets_arr > 0))
+            losing_trades = int(np.count_nonzero(rets_arr <= 0))
+            win_rate = (winning_trades / total_trades) * 100.0
 
-        gross_wins = sum(tr.net_pnl for tr in trades if tr.net_pnl > 0)
-        gross_losses = abs(sum(tr.net_pnl for tr in trades if tr.net_pnl < 0))
-        profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else (2.5 if gross_wins > 0 else 1.0)
-
-        avg_trade_ret = (sum(tr.return_pct for tr in trades) / total_trades) if total_trades > 0 else 0.0
+            gross_wins = float(np.sum(pnl_arr[pnl_arr > 0])) if np.any(pnl_arr > 0) else 0.0
+            gross_losses = float(np.abs(np.sum(pnl_arr[pnl_arr < 0]))) if np.any(pnl_arr < 0) else 0.0
+            profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else (2.5 if gross_wins > 0 else 1.0)
+            avg_trade_ret = float(np.mean(rets_arr))
+        else:
+            winning_trades = 0
+            losing_trades = 0
+            win_rate = 0.0
+            profit_factor = 1.0
+            avg_trade_ret = 0.0
 
         # Bailey & López de Prado (2014) Deflated Sharpe Ratio with Multiple-Testing Haircut (N_trials=10)
         if len(daily_rets) > 20 and daily_rets.std() > 1e-5:

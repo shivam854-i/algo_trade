@@ -5,17 +5,21 @@ high-throughput batch sequence processing, parallel tensor embeddings,
 and supervised Pinball-Loss non-crossing quantile projections (q10 <= q50 <= q90).
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 import logging
 import os
 import shutil
 import subprocess
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+if TYPE_CHECKING:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +45,58 @@ class GPUManager:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(GPUManager, cls).__new__(cls)
-            cls._instance._init_hardware()
+            cls._instance._initialized = False
+            cls._instance._cuda_available = False
+            cls._instance._device = None
+            cls._instance._profile = None
         return cls._instance
 
+    def _ensure_initialized(self):
+        if not self._initialized:
+            self._init_hardware()
+            self._initialized = True
+
     def _init_hardware(self):
-        self.cuda_available = torch.cuda.is_available()
-        self.device = torch.device("cuda:0" if self.cuda_available else "cpu")
-        self.profile = self.detect_hardware()
+        try:
+            import torch
+            self._cuda_available = torch.cuda.is_available()
+            self._device = torch.device("cuda:0" if self._cuda_available else "cpu")
+        except ImportError:
+            self._cuda_available = False
+            self._device = "cpu"
+
+        self._profile = self.detect_hardware()
         logger.info(
-            f"Hardware acceleration initialized on: {self.profile.device_name} "
-            f"(CUDA: {self.profile.cuda_available}, VRAM: {self.profile.free_memory_mb:.1f}MB Free)"
+            f"Hardware acceleration initialized on: {self._profile.device_name} "
+            f"(CUDA: {self._cuda_available}, VRAM: {self._profile.free_memory_mb:.1f}MB Free)"
         )
+
+    @property
+    def cuda_available(self) -> bool:
+        self._ensure_initialized()
+        return self._cuda_available
+
+    @cuda_available.setter
+    def cuda_available(self, val: bool):
+        self._cuda_available = val
+
+    @property
+    def device(self) -> Any:
+        self._ensure_initialized()
+        return self._device
+
+    @device.setter
+    def device(self, val: Any):
+        self._device = val
+
+    @property
+    def profile(self) -> HardwareProfile:
+        self._ensure_initialized()
+        return self._profile
+
+    @profile.setter
+    def profile(self, val: HardwareProfile):
+        self._profile = val
 
     def detect_hardware(self) -> HardwareProfile:
         """Probes system GPU, driver, and CUDA compute capability."""
@@ -64,8 +109,16 @@ class GPUManager:
         precision = "fp32"
         batch_size = 32
 
-        if self.cuda_available:
+        cuda_avail = False
+        try:
+            import torch
+            cuda_avail = torch.cuda.is_available()
+        except ImportError:
+            cuda_avail = False
+
+        if cuda_avail:
             try:
+                import torch
                 device_name = torch.cuda.get_device_name(0)
                 major, minor = torch.cuda.get_device_capability(0)
                 comp_cap = f"{major}.{minor}"
@@ -85,7 +138,7 @@ class GPUManager:
             except Exception as e:
                 logger.warning(f"Error querying torch.cuda properties: {e}")
 
-        if not self.cuda_available and shutil.which("nvidia-smi"):
+        if not cuda_avail and shutil.which("nvidia-smi"):
             try:
                 res = subprocess.run(
                     [
@@ -109,7 +162,7 @@ class GPUManager:
                 pass
 
         return HardwareProfile(
-            cuda_available=self.cuda_available,
+            cuda_available=cuda_avail,
             device_name=device_name,
             compute_capability=comp_cap,
             total_memory_mb=round(total_mem, 1),
@@ -120,52 +173,73 @@ class GPUManager:
             precision_mode=precision,
         )
 
-    def get_device(self) -> torch.device:
+    def get_device(self) -> Any:
         return self.device
 
-    def to_device(self, tensor: torch.Tensor) -> torch.Tensor:
+    def to_device(self, tensor: Any) -> Any:
         return tensor.to(self.device)
 
 
-class CausalQuantileTCN(nn.Module):
-    """Causal Dilated Temporal Convolutional Network with Monotonic Quantile Head.
+_CausalQuantileTCN = None
 
-    Guarantees non-crossing quantile predictions: q10 <= q50 <= q90 via Softplus offsets.
-    """
 
-    def __init__(self, in_channels: int = 5, emb_dim: int = 32):
-        super().__init__()
-        self.pad1 = nn.ConstantPad1d((2, 0), 0.0)  # Causal left padding for k=3, d=1
-        self.conv1 = nn.Conv1d(in_channels, emb_dim, kernel_size=3, dilation=1)
-        self.pad2 = nn.ConstantPad1d((4, 0), 0.0)  # Causal left padding for k=3, d=2
-        self.conv2 = nn.Conv1d(emb_dim, emb_dim, kernel_size=3, dilation=2)
-        self.norm = nn.LayerNorm(emb_dim)
-        self.head = nn.Linear(emb_dim, 3)
+def _get_causal_quantile_tcn_cls():
+    global _CausalQuantileTCN
+    if _CausalQuantileTCN is None:
+        import torch
+        import torch.nn as nn
+        import torch.nn.functional as F
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, 5, L)
-        h1 = F.gelu(self.conv1(self.pad1(x)))
-        h2 = F.gelu(self.conv2(self.pad2(h1))) + h1  # Residual connection
-        # Take causal final time step representation + global average pooling
-        pooled = 0.5 * h2[:, :, -1] + 0.5 * h2.mean(dim=-1)
-        normed = self.norm(pooled)
-        raw = torch.tanh(self.head(normed)) * 0.08  # Bounded shock scale [-8%, +8%]
+        class CausalQuantileTCN(nn.Module):
+            """Causal Dilated Temporal Convolutional Network with Monotonic Quantile Head.
 
-        q50 = raw[:, 1]
-        spread_down = F.softplus(raw[:, 0]) * 0.03 + 1e-4
-        spread_up = F.softplus(raw[:, 2]) * 0.03 + 1e-4
+            Guarantees non-crossing quantile predictions: q10 <= q50 <= q90 via Softplus offsets.
+            """
 
-        q10 = q50 - spread_down
-        q90 = q50 + spread_up
-        return torch.stack([q10, q50, q90], dim=-1)
+            def __init__(self, in_channels: int = 5, emb_dim: int = 32):
+                super().__init__()
+                self.pad1 = nn.ConstantPad1d((2, 0), 0.0)  # Causal left padding for k=3, d=1
+                self.conv1 = nn.Conv1d(in_channels, emb_dim, kernel_size=3, dilation=1)
+                self.pad2 = nn.ConstantPad1d((4, 0), 0.0)  # Causal left padding for k=3, d=2
+                self.conv2 = nn.Conv1d(emb_dim, emb_dim, kernel_size=3, dilation=2)
+                self.norm = nn.LayerNorm(emb_dim)
+                self.head = nn.Linear(emb_dim, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # x: (B, 5, L)
+                h1 = F.gelu(self.conv1(self.pad1(x)))
+                h2 = F.gelu(self.conv2(self.pad2(h1))) + h1  # Residual connection
+                # Take causal final time step representation + global average pooling
+                pooled = 0.5 * h2[:, :, -1] + 0.5 * h2.mean(dim=-1)
+                normed = self.norm(pooled)
+                raw = torch.tanh(self.head(normed)) * 0.08  # Bounded shock scale [-8%, +8%]
+
+                q50 = raw[:, 1]
+                spread_down = F.softplus(raw[:, 0]) * 0.03 + 1e-4
+                spread_up = F.softplus(raw[:, 2]) * 0.03 + 1e-4
+
+                q10 = q50 - spread_down
+                q90 = q50 + spread_up
+                return torch.stack([q10, q50, q90], dim=-1)
+
+        _CausalQuantileTCN = CausalQuantileTCN
+    return _CausalQuantileTCN
+
+
+def __getattr__(name: str) -> Any:
+    if name == "CausalQuantileTCN":
+        return _get_causal_quantile_tcn_cls()
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
 def pinball_quantile_loss(
-    preds: torch.Tensor,
-    targets: torch.Tensor,
+    preds: Any,
+    targets: Any,
     quantiles: Tuple[float, float, float] = (0.10, 0.50, 0.90),
-) -> torch.Tensor:
+) -> Any:
     """Computes Pinball Loss across multiple quantiles simultaneously."""
+    import torch
+
     losses = []
     target_col = targets.unsqueeze(-1)  # (B, 1)
     for idx, q in enumerate(quantiles):
@@ -186,14 +260,42 @@ class TorchSequenceForecaster:
         self.seq_len = sequence_length
         self.emb_dim = embedding_dim
         self.horizon = horizon
-        self.gpu_mgr = GPUManager()
-        self.device = self.gpu_mgr.get_device()
-
-        torch.manual_seed(42)
-        self.net = CausalQuantileTCN(in_channels=5, emb_dim=self.emb_dim).to(self.device)
-        self.net.eval()
+        self._gpu_mgr: Optional[GPUManager] = None
+        self._device = None
+        self._net = None
         self.is_trained: bool = False
         self._last_trained_len: int = 0
+        self._last_cache_key: Optional[Tuple[Any, ...]] = None
+        self._last_loss: float = 0.0
+
+    @property
+    def gpu_mgr(self) -> GPUManager:
+        if self._gpu_mgr is None:
+            self._gpu_mgr = GPUManager()
+        return self._gpu_mgr
+
+    @property
+    def device(self) -> Any:
+        if self._device is None:
+            self._device = self.gpu_mgr.get_device()
+        return self._device
+
+    @property
+    def net(self) -> Any:
+        if self._net is None:
+            self._init_net()
+        return self._net
+
+    @net.setter
+    def net(self, val: Any) -> None:
+        self._net = val
+
+    def _init_net(self) -> None:
+        import torch
+        cls_tcn = _get_causal_quantile_tcn_cls()
+        torch.manual_seed(42)
+        self._net = cls_tcn(in_channels=5, emb_dim=self.emb_dim).to(self.device)
+        self._net.eval()
 
     @staticmethod
     def _extract_channels(df: pd.DataFrame) -> np.ndarray:
@@ -212,11 +314,21 @@ class TorchSequenceForecaster:
         ohlcv_df: pd.DataFrame,
         epochs: int = 12,
         lr: float = 0.005,
+        ticker: Optional[str] = None,
+        data_hash: Optional[str] = None,
+        config_hash: Optional[str] = None,
     ) -> float:
         """Trains the Causal TCN using Pinball Quantile Loss on strictly historical windows.
 
         Uses purged targets (excluding the final `horizon` bars) so zero future information leaks.
         """
+        # Model Caching Check
+        cache_key = (ticker, data_hash, config_hash) if (ticker or data_hash or config_hash) else None
+        if cache_key and self.is_trained and self._last_cache_key == cache_key:
+            return self._last_loss
+
+        import torch
+
         n_rows = len(ohlcv_df)
         min_required = self.seq_len + self.horizon + 15
         if n_rows < min_required:
@@ -262,10 +374,15 @@ class TorchSequenceForecaster:
         self.net.eval()
         self.is_trained = True
         self._last_trained_len = n_rows
+        self._last_loss = final_loss
+        if cache_key:
+            self._last_cache_key = cache_key
         return final_loss
 
     def forecast_tensor(self, ohlcv_df: pd.DataFrame) -> Tuple[float, float, float]:
         """Processes normalized OHLCV window and outputs monotonic non-crossing (q10, q50, q90) shocks."""
+        import torch
+
         if not self.is_trained and len(ohlcv_df) >= self.seq_len + self.horizon + 15:
             self.fit(ohlcv_df)
 
@@ -316,6 +433,8 @@ class TorchSequenceForecaster:
         """Batches multiple assets into a single 3D tensor on GPU/CPU for ultra-fast inference."""
         if not ohlcv_dict:
             return {}
+
+        import torch
 
         valid_tickers = []
         tensors = []

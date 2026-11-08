@@ -1,0 +1,75 @@
+{
+  "timestamp_utc": "2026-11-08 11:34:07",
+  "environment": {
+    "python_version": "3.13.7",
+    "platform": "win32",
+    "cpu_count": 16
+  },
+  "benchmarks": {
+    "server_startup": {
+      "module_import_ms": 3583.42,
+      "market_prediction_engine_init_ms": 2.84,
+      "backtest_engine_init_ms": 1.77,
+      "controller_instantiation_ms": 2.75,
+      "market_state_portfolio_warmup_ms": 4405.54,
+      "total_engine_cold_boot_ms": 6345.04,
+      "total_process_to_ready_ms": 9928.46
+    },
+    "analyze_ticker": {
+      "ticker": "RELIANCE.NS",
+      "cold_run_ms": 2680.49,
+      "warm_run_mean_ms": 161.08,
+      "warm_run_median_ms": 159.51,
+      "warm_run_min_ms": 154.0,
+      "warm_run_max_ms": 176.44,
+      "warm_run_std_ms": 8.02,
+      "warm_samples_ms": [
+        159.51,
+        154.0,
+        160.02,
+        176.44,
+        155.44
+      ],
+      "speedup_factor": 16.64
+    },
+    "backtest": {
+      "ticker": "RELIANCE.NS",
+      "period": "6mo",
+      "interval": "1d",
+      "cold_run_ms": 2738.35,
+      "mean_ms": 1246.78,
+      "median_ms": 502.41,
+      "min_ms": 499.59,
+      "max_ms": 2738.35,
+      "std_ms": 1054.69,
+      "samples_ms": [
+        2738.35,
+        502.41,
+        499.59
+      ]
+    },
+    "dashboard_poll": {
+      "iterations": 50,
+      "direct_controller": {
+        "mean_ms": 15.39,
+        "median_ms": 13.17,
+        "p95_ms": 15.14,
+        "p99_ms": 67.86,
+        "min_ms": 12.53,
+        "max_ms": 117.67,
+        "std_ms": 14.63,
+        "throughput_ops_sec": 65.0
+      },
+      "http_endpoint": {
+        "mean_ms": 19.77,
+        "median_ms": 19.62,
+        "p95_ms": 20.93,
+        "p99_ms": 22.03,
+        "min_ms": 18.67,
+        "max_ms": 22.99,
+        "std_ms": 0.72,
+        "throughput_req_sec": 50.6
+      }
+    }
+  }
+}

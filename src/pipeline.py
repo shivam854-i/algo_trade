@@ -17,6 +17,7 @@ Live-Market Compatibility & Anti-Leakage Guarantees:
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
@@ -87,7 +88,49 @@ class MarketPredictionEngine:
         self.guardrail = RiskGuardrailEngine(
             kelly_fraction=kelly_fraction, target_annual_vol=target_vol
         )
+        self.kelly_fraction = kelly_fraction
+        self.target_vol = target_vol
         self.current_drawdown = current_drawdown
+        self._model_cache: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        self._cache_ttl_seconds: float = 86400.0  # 24 hour scheduled expiry
+
+    @staticmethod
+    def compute_data_hash(df: pd.DataFrame) -> str:
+        """Computes deterministic hash of dataset structure and boundary data."""
+        if df.empty:
+            return "empty"
+        import hashlib
+        n = len(df)
+        sample_indices = [0, n // 2, n - 1]
+        sample_rows = df.iloc[sample_indices]
+        summary = f"{df.shape}_{list(df.columns)}_{sample_rows.to_dict()}"
+        return hashlib.sha256(summary.encode("utf-8")).hexdigest()[:16]
+
+    def compute_config_hash(self) -> str:
+        """Computes deterministic hash of model and risk configuration."""
+        import hashlib
+        import json
+        config_dict = {
+            "kelly_fraction": self.kelly_fraction,
+            "target_vol": self.target_vol,
+            "pt_mult": getattr(self.meta_engine, "pt_mult", 1.8),
+            "sl_mult": getattr(self.meta_engine, "sl_mult", 1.25),
+            "holding_period": getattr(self.meta_engine, "holding_period", 5),
+            "seq_len": getattr(self.neural_forecaster, "seq_len", 30),
+            "horizon": getattr(self.neural_forecaster, "horizon", 5),
+        }
+        sorted_items = sorted((k, str(v)) for k, v in config_dict.items())
+        return hashlib.sha256(json.dumps(sorted_items).encode("utf-8")).hexdigest()[:16]
+
+    def clear_model_cache(self, ticker: Optional[str] = None) -> None:
+        """Explicitly expires/clears model cache for a ticker or globally."""
+        if ticker is None:
+            self._model_cache.clear()
+        else:
+            tk = ticker.strip().upper()
+            self._model_cache = {
+                k: v for k, v in self._model_cache.items() if k[0] != tk
+            }
 
     @staticmethod
     def _enforce_point_in_time_cutoff(
@@ -187,8 +230,29 @@ class MarketPredictionEngine:
         # 5. Market Regime Detection (Causal Forward-Filtering HMM)
         regime = self.regime_clf.get_current_regime(df_clean)
 
-        # 6. Two-Stage Meta-Labeling Prediction (Purged High/Low Tabular Causal Model)
-        meta_pred = self.meta_engine.train_and_predict(feats, df_clean)
+        # Model Caching Key: (ticker, data_hash, config_hash)
+        data_h = self.compute_data_hash(df_clean)
+        cfg_h = self.compute_config_hash()
+        cache_key = (ticker.upper(), data_h, cfg_h)
+        now_ts = time.time()
+
+        cached_entry = self._model_cache.get(cache_key)
+        is_cache_valid = (
+            cached_entry is not None
+            and (now_ts - cached_entry.get("created_at", 0)) < self._cache_ttl_seconds
+            and not force_refresh
+            and self.meta_engine.model is not None
+            and self.neural_forecaster.is_trained
+        )
+
+        if is_cache_valid:
+            # 6. Reuse cached MetaLabeling model
+            meta_pred = self.meta_engine.predict_bar(feats.iloc[[-1]], df_clean.iloc[[-1]])
+        else:
+            # 6. Two-Stage Meta-Labeling Prediction (Purged High/Low Tabular Causal Model)
+            meta_pred = self.meta_engine.train_and_predict(
+                feats, df_clean, ticker=ticker, data_hash=data_h, config_hash=cfg_h
+            )
 
         # If a genuine live quote price was supplied, re-anchor target/stop barriers to live_price
         if live_price is not None and live_price > 0 and float(df_clean["Close"].iloc[-1]) > 0:
@@ -199,7 +263,16 @@ class MarketPredictionEngine:
             meta_pred.stop_price = round(float(meta_pred.stop_price * scale), decimals)
 
         # 7. Supervised Pinball-Loss Causal TCN Sequence Forecaster
-        self.neural_forecaster.fit(df_clean, epochs=10)
+        if not is_cache_valid:
+            self.neural_forecaster.fit(
+                df_clean, epochs=10, ticker=ticker, data_hash=data_h, config_hash=cfg_h
+            )
+            self._model_cache[cache_key] = {
+                "created_at": now_ts,
+                "meta_model": self.meta_engine.model,
+                "neural_forecaster_trained": self.neural_forecaster.is_trained,
+            }
+
         neural_dir, neural_prob = self.neural_forecaster.evaluate_directional_conviction(df_clean)
         dev_str = str(self.neural_forecaster.device).upper()
         hardware_accel = "CUDA (NVIDIA RTX 4060)" if "CUDA" in dev_str else "AVX2 CPU (Multi-Core)"
@@ -451,3 +524,7 @@ class MarketPredictionEngine:
             aggregate_regime=agg_regime,
             circuit_breaker_active=circuit_active,
         )
+
+
+Pipeline = MarketPredictionEngine
+

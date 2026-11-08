@@ -7,7 +7,7 @@ and persistent event logs.
 """
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, time as dt_time, timedelta, timezone
 import json
 import logging
 import os
@@ -15,8 +15,9 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import urllib.request
+from zoneinfo import ZoneInfo
 
 try:
     if sys.stdout.encoding.lower() != "utf-8":
@@ -28,6 +29,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.execution.broker import PaperBroker
+from src.execution.market_sessions import MarketCalendarManager
 from src.pipeline import MarketPredictionEngine, SingleAssetAnalysis
 
 logger = logging.getLogger(__name__)
@@ -169,6 +171,7 @@ class MarketObserverDaemon:
         data_interval: str = "1d",
         discord_webhook: Optional[str] = None,
         auto_trade: bool = False,
+        gate_nse: bool = True,
     ):
         self.universe = universe or [
             "GC=F",          # Gold Commodities
@@ -184,12 +187,89 @@ class MarketObserverDaemon:
         self.interval = data_interval
         self.auto_trade = auto_trade
         self.broker = PaperBroker() if auto_trade else None
+        self.gate_nse = gate_nse
+        self.calendar = MarketCalendarManager()
+        self.tz_ist = ZoneInfo("Asia/Kolkata")
 
         self.engine = MarketPredictionEngine()
         alert_dir = Path("data/alerts")
         self.dispatcher = AlertDispatcher(
             alert_dir=alert_dir, discord_webhook_url=discord_webhook
         )
+
+    def get_nse_market_status(self, now_utc: Optional[datetime] = None) -> Tuple[bool, int, str]:
+        """Evaluates whether NSE is in regular trading session (09:15-15:30 IST, Mon-Fri, non-holiday).
+
+        Returns:
+            (is_open: bool, sleep_seconds: int, status_reason: str)
+        """
+        now_ist = (
+            datetime.now(self.tz_ist)
+            if now_utc is None
+            else (
+                now_utc.astimezone(self.tz_ist)
+                if now_utc.tzinfo
+                else now_utc.replace(tzinfo=timezone.utc).astimezone(self.tz_ist)
+            )
+        )
+        today = now_ist.date()
+        weekday = now_ist.weekday()
+        t = now_ist.time()
+
+        # Check Weekend (Saturday=5, Sunday=6)
+        if weekday >= 5:
+            days_until_mon = (7 - weekday) % 7
+            next_day = today + timedelta(days=days_until_mon)
+            while next_day.weekday() >= 5 or next_day in self.calendar.nse_holidays:
+                next_day += timedelta(days=1)
+            next_open = datetime.combine(next_day, dt_time(9, 15), tzinfo=self.tz_ist)
+            wait_s = max(1, int((next_open - now_ist).total_seconds()))
+            return False, wait_s, "NSE Closed: Weekend"
+
+        # Check Statutory Holiday
+        if today in self.calendar.nse_holidays:
+            h_name = self.calendar.nse_holidays[today]
+            next_bus = today + timedelta(days=1)
+            while next_bus.weekday() >= 5 or next_bus in self.calendar.nse_holidays:
+                next_bus += timedelta(days=1)
+            next_open = datetime.combine(next_bus, dt_time(9, 15), tzinfo=self.tz_ist)
+            wait_s = max(1, int((next_open - now_ist).total_seconds()))
+            return False, wait_s, f"NSE Closed: Statutory Holiday ({h_name})"
+
+        # Before Market Open (00:00 - 09:15)
+        if t < dt_time(9, 15):
+            today_open = datetime.combine(today, dt_time(9, 15), tzinfo=self.tz_ist)
+            wait_s = max(1, int((today_open - now_ist).total_seconds()))
+            return False, wait_s, "NSE Closed: Pre-Market / Overnight"
+
+        # After Market Close (15:30 - 23:59)
+        if t > dt_time(15, 30):
+            next_day = today + timedelta(days=1)
+            while next_day.weekday() >= 5 or next_day in self.calendar.nse_holidays:
+                next_day += timedelta(days=1)
+            next_open = datetime.combine(next_day, dt_time(9, 15), tzinfo=self.tz_ist)
+            wait_s = max(1, int((next_open - now_ist).total_seconds()))
+            return False, wait_s, "NSE Closed: Post-Market / After-Hours"
+
+        # Regular Trading Hours (09:15 - 15:30 IST)
+        market_close = datetime.combine(today, dt_time(15, 30), tzinfo=self.tz_ist)
+        secs_to_close = max(1, int((market_close - now_ist).total_seconds()))
+        return True, secs_to_close, "NSE Regular Trading Session Live"
+
+    def get_next_bar_sleep_seconds(self, now_utc: Optional[datetime] = None) -> int:
+        """Calculates sleep duration aligned with next bar close or poll interval."""
+        cur_ts = time.time() if now_utc is None else now_utc.timestamp()
+        interval_secs = max(5, self.poll_interval)
+
+        # Align with next bar boundary
+        next_boundary = ((int(cur_ts) // interval_secs) + 1) * interval_secs
+        aligned_secs = max(1, int(next_boundary - cur_ts) + 1)
+
+        # Cap at remaining session duration so we don't sleep past market close
+        is_open, secs_to_close, _ = self.get_nse_market_status(now_utc)
+        if is_open and secs_to_close > 0:
+            return min(aligned_secs, secs_to_close)
+        return aligned_secs
 
     def scan_once(self) -> List[AlertRecord]:
         """Performs a single complete scan across the monitored universe."""
@@ -318,12 +398,24 @@ class MarketObserverDaemon:
             f"[bold green][*] SYNAPSE-TITAN Background Daemon Started![/]\n"
             f"Universe: {', '.join(self.universe)}\n"
             f"Cycle Interval: {self.poll_interval}s ({self.poll_interval / 60:.1f} mins)\n"
+            f"NSE Gating: {'Enabled (09:15–15:30 IST, Mon–Fri, excluding holidays)' if self.gate_nse else 'Disabled'}\n"
             f"Press Ctrl+C to terminate gracefully."
         )
 
         try:
             while True:
+                if self.gate_nse:
+                    is_open, wait_secs, reason = self.get_nse_market_status()
+                    if not is_open:
+                        console.print(
+                            f"[dim yellow][SCHEDULE GATING] {reason}. "
+                            f"Sleeping for {wait_secs}s ({wait_secs / 3600:.2f}h) until next NSE open.[/dim yellow]"
+                        )
+                        time.sleep(wait_secs)
+                        continue
+
                 self.scan_once()
-                time.sleep(self.poll_interval)
+                sleep_secs = self.get_next_bar_sleep_seconds()
+                time.sleep(sleep_secs)
         except KeyboardInterrupt:
             console.print("\n[bold red][STOP] Observer Daemon shutdown requested. Exiting cleanly.[/]")

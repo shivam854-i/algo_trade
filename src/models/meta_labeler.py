@@ -47,6 +47,7 @@ class MetaLabelingEngine:
         self.feature_importances: Dict[str, float] = {}
         self.payoff_ratio_b: float = float(pt_vol_mult / max(sl_vol_mult, 1e-4))
         self.empirical_win_rate: float = 0.58
+        self._last_cache_key: Optional[Tuple[Any, ...]] = None
 
     def compute_triple_barrier_labels(
         self,
@@ -170,8 +171,19 @@ class MetaLabelingEngine:
 
         return signals
 
-    def fit(self, feats: pd.DataFrame, df_ohlcv: pd.DataFrame) -> bool:
+    def fit(
+        self,
+        feats: pd.DataFrame,
+        df_ohlcv: pd.DataFrame,
+        ticker: Optional[str] = None,
+        data_hash: Optional[str] = None,
+        config_hash: Optional[str] = None,
+    ) -> bool:
         """Fits secondary meta-model on purged High/Low triple-barrier labels."""
+        cache_key = (ticker, data_hash, config_hash) if (ticker or data_hash or config_hash) else None
+        if cache_key and self.model is not None and self._last_cache_key == cache_key:
+            return True
+
         if len(feats) < 30 or len(df_ohlcv) < 30:
             return False
 
@@ -231,6 +243,8 @@ class MetaLabelingEngine:
                 self.feature_importances[col_name] = round(
                     float(imp_scores[idx] / (imp_scores.sum() + 1e-10)), 3
                 )
+            if cache_key:
+                self._last_cache_key = cache_key
             return True
 
         except Exception as e:
@@ -249,6 +263,8 @@ class MetaLabelingEngine:
             for idx in sorted_idx:
                 col_name = self.feature_cols[idx]
                 self.feature_importances[col_name] = round(float(imp_scores[idx]), 3)
+            if cache_key:
+                self._last_cache_key = cache_key
             return True
 
     def predict_bar(
@@ -339,8 +355,13 @@ class MetaLabelingEngine:
         )
 
     def train_and_predict(
-        self, feats: pd.DataFrame, df_ohlcv: pd.DataFrame
+        self,
+        feats: pd.DataFrame,
+        df_ohlcv: pd.DataFrame,
+        ticker: Optional[str] = None,
+        data_hash: Optional[str] = None,
+        config_hash: Optional[str] = None,
     ) -> MetaPrediction:
         """Trains secondary meta-model and produces calibrated forecast for the latest bar."""
-        self.fit(feats, df_ohlcv)
+        self.fit(feats, df_ohlcv, ticker=ticker, data_hash=data_hash, config_hash=config_hash)
         return self.predict_bar(feats.iloc[[-1]], df_ohlcv.iloc[[-1]])

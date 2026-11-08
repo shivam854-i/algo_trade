@@ -2,7 +2,7 @@
 
 Supports US Equities, Indian Equities (NSE/BSE), Commodities, Forex, and Cryptocurrencies.
 Features timeframe-aware dynamic TTL caching, automatic error fallback, UTC timezone
-preservation, and concurrent multi-ticker ingestion.
+preservation, batch multi-ticker provider ingestion, and incremental bar appending.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class MarketDataDownloader:
-    """Universal market data downloader with resilient disk caching."""
+    """Universal market data downloader with resilient disk caching and incremental updates."""
 
     # Default timeframe-aware dynamic cache TTL mapping
     DEFAULT_TIMEFRAME_TTL: Dict[str, timedelta] = {
@@ -102,22 +102,9 @@ class MarketDataDownloader:
             logger.warning(f"Error reading cache at {cache_path}: {e}")
             return pd.DataFrame()
 
-    def download_ticker(
-        self,
-        ticker: str,
-        period: str = "2y",
-        interval: str = "1d",
-        force_refresh: bool = False,
-    ) -> pd.DataFrame:
-        """Downloads single ticker data or loads from local cache with dynamic TTL.
-
-        Returns:
-            pd.DataFrame with standard columns [Open, High, Low, Close, Volume]
-            and timezone-aware UTC DatetimeIndex.
-        """
-        ticker = self._sanitize_ticker(ticker)
-
-        # Automatically clamp intraday lookback to Yahoo Finance limits
+    @staticmethod
+    def _clamp_period(period: str, interval: str) -> str:
+        """Automatically clamp intraday lookback to Yahoo Finance limits."""
         effective_period = period
         if interval in ["1m", "2m"]:
             if period not in ["1d", "5d", "7d"]:
@@ -128,7 +115,41 @@ class MarketDataDownloader:
         elif interval == "1h":
             if period in ["5y", "10y", "max"]:
                 effective_period = "730d"
+        return effective_period
 
+    @staticmethod
+    def _standardize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+        """Standardizes columns, drops zero prices, and enforces UTC timezone."""
+        if df is None or df.empty:
+            return pd.DataFrame()
+        req_cols = ["Open", "High", "Low", "Close", "Volume"]
+        for col in req_cols:
+            if col not in df.columns:
+                return pd.DataFrame()
+        out = df[req_cols].copy()
+        out.index.name = "Date"
+        if out.index.tz is not None:
+            out.index = out.index.tz_convert("UTC")
+        else:
+            out.index = out.index.tz_localize("UTC")
+        out = out[out["Close"] > 0].dropna()
+        return out
+
+    def download_ticker(
+        self,
+        ticker: str,
+        period: str = "2y",
+        interval: str = "1d",
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
+        """Downloads single ticker data or loads from local cache with dynamic TTL.
+
+        Features incremental bar fetching: if a cached history exists, only missing
+        bars since the last cached timestamp are retrieved instead of re-downloading
+        the entire multi-year history.
+        """
+        ticker = self._sanitize_ticker(ticker)
+        effective_period = self._clamp_period(period, interval)
         cache_path = self._get_cache_path(ticker, interval, effective_period)
 
         # 1. Warm Cache Check (Dynamic Timeframe-Aware TTL)
@@ -137,10 +158,51 @@ class MarketDataDownloader:
             if not cached_df.empty:
                 return cached_df
 
-        # 2. Live Ingestion from Yahoo Finance with Robust Exception Handling
+        # 2. Incremental Bar Update Check: If cache exists, fetch only missing bars
+        cached_df = pd.DataFrame()
+        if not force_refresh and cache_path.exists():
+            cached_df = self._read_cache_df(cache_path)
+
+        if not cached_df.empty:
+            last_ts = cached_df.index[-1]
+            try:
+                yf_ticker = yf.Ticker(ticker)
+                # Overlap by 1 day (or 2 hours for intraday) to capture final completed bar
+                if interval in ["1d", "1wk", "1mo"]:
+                    start_str = (last_ts - timedelta(days=1)).strftime("%Y-%m-%d")
+                else:
+                    start_str = (last_ts - timedelta(hours=2)).strftime("%Y-%m-%d")
+
+                df_inc = yf_ticker.history(
+                    start=start_str,
+                    interval=interval,
+                    auto_adjust=True,
+                    raise_errors=True,
+                )
+                if df_inc is not None and not df_inc.empty:
+                    df_inc = self._standardize_ohlcv(df_inc)
+                    if not df_inc.empty:
+                        combined = pd.concat([cached_df, df_inc])
+                        combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+                        combined.to_csv(cache_path)
+                        return combined
+
+                # If no new bars returned (e.g. market closed), touch cache to refresh TTL and return cached
+                try:
+                    os.utime(cache_path, None)
+                except Exception:
+                    pass
+                return cached_df
+
+            except Exception as e:
+                logger.warning(
+                    f"Incremental bar fetch failed for {ticker}: {e}. Falling back to cached data."
+                )
+                return cached_df
+
+        # 3. Live Ingestion from Yahoo Finance with Robust Exception Handling
         try:
             yf_ticker = yf.Ticker(ticker)
-            # Set raise_errors=True so network timeouts/429 errors raise exceptions rather than empty DFs
             df = yf_ticker.history(
                 period=effective_period,
                 interval=interval,
@@ -148,7 +210,7 @@ class MarketDataDownloader:
                 raise_errors=True,
             )
 
-            # If empty DataFrame is returned (e.g. market closure, silent rejection), trigger cache fallback
+            # If empty DataFrame is returned, trigger cache fallback
             if df is None or df.empty:
                 logger.warning(
                     f"No data returned from live feed for {ticker} (period={period}, interval={interval}). "
@@ -160,19 +222,9 @@ class MarketDataDownloader:
                     return fallback_df
                 return pd.DataFrame()
 
-            # Normalize column names
-            df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
-            df.index.name = "Date"
-
-            # Preserve timezone metadata: Standardize all feeds to UTC to prevent 10.5h alignment corruption
-            if df.index.tz is not None:
-                df.index = df.index.tz_convert("UTC")
-            else:
-                df.index = df.index.tz_localize("UTC")
-
-            # Drop invalid/zero prices
-            df = df[df["Close"] > 0]
-            df = df.dropna()
+            df = self._standardize_ohlcv(df)
+            if df.empty:
+                return pd.DataFrame()
 
             # Save to disk cache
             df.to_csv(cache_path)
@@ -186,22 +238,20 @@ class MarketDataDownloader:
                 return fallback_df
             return pd.DataFrame()
 
-    def download_multiple(
+    def download_batch(
         self,
         tickers: List[str],
         period: str = "2y",
         interval: str = "1d",
         force_refresh: bool = False,
-        max_workers: int = 4,
     ) -> Dict[str, pd.DataFrame]:
-        """Downloads a collection of tickers concurrently using a thread pool.
+        """Downloads a collection of tickers in a single batch provider call with incremental caching.
 
         Args:
             tickers: List of ticker strings.
             period: Lookback window (e.g. '1y', '5d').
             interval: Bar resolution (e.g. '1d', '1m').
             force_refresh: If True, bypasses cache and forces network fetch.
-            max_workers: Maximum concurrent worker threads. Defaults to 4.
 
         Returns:
             Dictionary mapping sanitized tickers to their OHLCV DataFrames.
@@ -211,6 +261,117 @@ class MarketDataDownloader:
             return results
 
         clean_tickers = [self._sanitize_ticker(t) for t in tickers]
+        missing_tickers: List[str] = []
+        effective_period = self._clamp_period(period, interval)
+
+        # 1. Warm Cache Check
+        for ticker in clean_tickers:
+            cache_path = self._get_cache_path(ticker, interval, effective_period)
+            if not force_refresh and self._is_cache_valid(cache_path, interval=interval):
+                cached = self._read_cache_df(cache_path)
+                if not cached.empty:
+                    results[ticker] = cached
+                    continue
+            missing_tickers.append(ticker)
+
+        if not missing_tickers:
+            return results
+
+        # 2. Batch Download in One Provider Call
+        try:
+            batch_df = yf.download(
+                tickers=missing_tickers,
+                period=effective_period,
+                interval=interval,
+                auto_adjust=True,
+                group_by="ticker",
+                threads=True,
+                progress=False,
+            )
+
+            if batch_df is not None and not batch_df.empty:
+                for ticker in missing_tickers:
+                    try:
+                        if len(missing_tickers) == 1:
+                            if isinstance(batch_df.columns, pd.MultiIndex):
+                                tk_df = (
+                                    batch_df[ticker]
+                                    if ticker in batch_df.columns.levels[0]
+                                    else batch_df
+                                )
+                            else:
+                                tk_df = batch_df
+                        else:
+                            tk_df = batch_df[ticker] if ticker in batch_df else pd.DataFrame()
+
+                        clean_df = self._standardize_ohlcv(tk_df)
+                        if not clean_df.empty:
+                            cache_path = self._get_cache_path(ticker, interval, effective_period)
+                            # Incremental append if stale cache exists
+                            if not force_refresh and cache_path.exists():
+                                old_cache = self._read_cache_df(cache_path)
+                                if not old_cache.empty:
+                                    clean_df = pd.concat([old_cache, clean_df])
+                                    clean_df = clean_df[~clean_df.index.duplicated(keep="last")].sort_index()
+
+                            clean_df.to_csv(cache_path)
+                            results[ticker] = clean_df
+                        else:
+                            single_df = self.download_ticker(ticker, period, interval, force_refresh)
+                            if not single_df.empty:
+                                results[ticker] = single_df
+                    except Exception as e:
+                        logger.warning(f"Error parsing batch output for {ticker}: {e}, falling back to single")
+                        single_df = self.download_ticker(ticker, period, interval, force_refresh)
+                        if not single_df.empty:
+                            results[ticker] = single_df
+            else:
+                for ticker in missing_tickers:
+                    single_df = self.download_ticker(ticker, period, interval, force_refresh)
+                    if not single_df.empty:
+                        results[ticker] = single_df
+
+        except Exception as e:
+            logger.warning(f"Batch download provider call failed: {e}. Falling back to individual downloads.")
+            for ticker in missing_tickers:
+                single_df = self.download_ticker(ticker, period, interval, force_refresh)
+                if not single_df.empty:
+                    results[ticker] = single_df
+
+        return results
+
+    def download_multiple(
+        self,
+        tickers: List[str],
+        period: str = "2y",
+        interval: str = "1d",
+        force_refresh: bool = False,
+        max_workers: int = 4,
+        use_batch: bool = True,
+    ) -> Dict[str, pd.DataFrame]:
+        """Downloads a collection of tickers concurrently or via single batch provider call.
+
+        Args:
+            tickers: List of ticker strings.
+            period: Lookback window (e.g. '1y', '5d').
+            interval: Bar resolution (e.g. '1d', '1m').
+            force_refresh: If True, bypasses cache and forces network fetch.
+            max_workers: Maximum concurrent worker threads (used if use_batch=False).
+            use_batch: If True (default), downloads tickers in a single provider call.
+
+        Returns:
+            Dictionary mapping sanitized tickers to their OHLCV DataFrames.
+        """
+        if not tickers:
+            return {}
+
+        if use_batch:
+            return self.download_batch(
+                tickers=tickers, period=period, interval=interval, force_refresh=force_refresh
+            )
+
+        clean_tickers = [self._sanitize_ticker(t) for t in tickers]
+        results: Dict[str, pd.DataFrame] = {}
 
         if len(clean_tickers) == 1 or max_workers <= 1:
             for clean_ticker in clean_tickers:

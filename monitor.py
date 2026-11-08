@@ -67,6 +67,12 @@ def main():
         action="store_true",
         help="Automatically execute paper orders in the live ledger when actionable signals fire",
     )
+    parser.add_argument(
+        "--gate-nse",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Gate polling to NSE trading hours (09:15-15:30 IST, Mon-Fri, excluding statutory holidays)",
+    )
 
     args = parser.parse_args()
 
@@ -80,6 +86,7 @@ def main():
         data_interval=args.data_interval,
         discord_webhook=args.discord_webhook,
         auto_trade=args.auto_trade,
+        gate_nse=args.gate_nse,
     )
 
     if args.once:
