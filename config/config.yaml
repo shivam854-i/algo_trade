@@ -6,6 +6,10 @@ engine:
   version: "1.0.0"
   random_seed: 42
 
+# Enabled Markets Governance (NSE-Only Focus)
+enabled_markets:
+  - "NSE_CASH"
+
 # Default Universes for Multi-Asset Observation
 universes:
   us_equities:

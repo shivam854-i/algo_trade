@@ -85,6 +85,7 @@ class TestAdversarialBoundaryTimes:
         assert s6.tick_frozen is True
         assert s6.next_state == MarketState.OPEN
 
+    @pytest.mark.disabled_market
     def test_nyse_subsecond_and_boundary_transitions(self):
         """Tests exact second transitions for NYSE: 03:59:59, 04:00:00, 09:29:59, 09:30:00, 16:00:00, 16:00:01, 20:00:00, 20:00:01."""
         test_day = date(2026, 4, 15)  # Wednesday (Trading Day)
@@ -141,6 +142,7 @@ class TestAdversarialBoundaryTimes:
         assert s8.state == MarketState.CLOSED
         assert s8.next_state == MarketState.OPEN
 
+    @pytest.mark.disabled_market
     def test_comex_gold_maintenance_break_and_reopen_exact_seconds(self):
         """Stress-tests CME COMEX Gold daily maintenance halt (17:00-18:00 ET Mon-Thu) and Sunday open."""
         # Tuesday 16:59:59 ET -> OPEN
@@ -189,6 +191,7 @@ class TestAdversarialBoundaryTimes:
         s_sun_open = self.cal.get_session_info("GC=F", now_utc=t_sun_open)
         assert s_sun_open.state == MarketState.OPEN
 
+    @pytest.mark.disabled_market
     def test_dst_transitions_us_equities_spring_and_fall(self):
         """Verifies Daylight Saving Time transition accuracy in 2026: Spring Forward (Mar 8) & Fall Back (Nov 1)."""
         # Spring 2026: Clocks forward on March 8, 2026

@@ -354,6 +354,7 @@ class TestCurrencyMismatchStress:
 class TestJurisdictionMismatchStress:
     """Stress tests cross-market instrument intrusion payloads."""
 
+    @pytest.mark.disabled_market
     def test_jurisdiction_mismatch_aapl_in_indian_nse(self):
         """Verifies US stock AAPL cannot be attached to an INDIAN_NSE session."""
         client = TestClient(app)
@@ -385,6 +386,7 @@ class TestJurisdictionMismatchStress:
                 session_end_policy="CLOSE_ALL",
             )
 
+    @pytest.mark.disabled_market
     def test_jurisdiction_mismatch_reliance_in_us_equities(self):
         """Verifies Indian stock RELIANCE.NS cannot be attached to a US_EQUITIES session."""
         client = TestClient(app)
@@ -467,6 +469,7 @@ class TestRoutePrecedenceCollisionStress:
         data = res.json()
         assert "session" in data
 
+    @pytest.mark.disabled_market
     def test_route_precedence_recommendations_endpoint(self):
         """Verifies POST /api/sessions/recommendations resolves to quantitative recommendations."""
         client = TestClient(app)

@@ -223,6 +223,7 @@ class TestNSEMarketSchedule:
         assert calendar.get_session_info("RELIANCE.NS", now_utc=t_closed).state == MarketState.CLOSED
 
 
+@pytest.mark.disabled_market
 class TestNYSEMarketSchedule:
     """Verifies US Equities (NYSE/NASDAQ) trading phases, timezones, DST, and statutory calendars."""
 
@@ -363,6 +364,7 @@ class TestNYSEMarketSchedule:
         assert calendar.get_session_info("AAPL", now_utc=winter_pre_utc).state == MarketState.PRE_MARKET
 
 
+@pytest.mark.disabled_market
 class TestCommoditiesAndForexSchedules:
     """Verifies COMEX Gold (GC=F) 23/5 and Forex 24/5 schedules."""
 
@@ -438,6 +440,7 @@ class TestCommoditiesAndForexSchedules:
         assert target_et.time() == time(17, 0)
 
 
+@pytest.mark.disabled_market
 class TestCryptoContinuousSchedule:
     """Verifies Cryptocurrencies continuous 24/7/365 state machine invariant."""
 
@@ -484,6 +487,7 @@ class TestSimulationModeDecoupling:
         assert not sim_sess.tick_frozen               # Price ticks update!
         assert "[SIMULATION MODE OVERRIDE]" in sim_sess.reason
 
+    @pytest.mark.disabled_market
     def test_holiday_nyse_stock_in_simulation_mode(self, calendar: MarketCalendarManager):
         # Christmas Day 2026-12-25
         now_utc = datetime(2026, 12, 25, 15, 0, 0, tzinfo=timezone.utc)

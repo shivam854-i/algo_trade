@@ -39,6 +39,7 @@ def isolated_broker():
 # AREA 1: LIMIT ORDER ROUTING
 # ============================================================================
 
+@pytest.mark.disabled_market
 class TestLimitOrderRouting:
     """Probes limit order handling via /api/dashboard/order."""
 
@@ -198,6 +199,7 @@ class TestLimitOrderRouting:
 class TestAccountCashResolution:
     """Probes soft cash hold accounting and available vs current cash invariants."""
 
+    @pytest.mark.disabled_market
     def test_cumulative_soft_holds_and_cancel_invariants(self, client):
         """Verify multiple soft cash holds accumulate and release cleanly without mutating current_cash."""
         bot = _get_live_bot()
@@ -360,6 +362,7 @@ class TestMarketSessionHolidayHandling:
         assert info.seconds_to_next_state == expected_seconds
         assert "Opens in" in info.countdown_display
 
+    @pytest.mark.disabled_market
     def test_nyse_christmas_day_statutory_holiday(self):
         """Verify NYSE on Christmas Day (2026-12-25, Friday) evaluates as HOLIDAY, frozen ticks, countdown to Monday."""
         # 11:00 AM ET on Friday 2026-12-25 (would normally be regular trading hours)

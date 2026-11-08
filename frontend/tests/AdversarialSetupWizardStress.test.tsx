@@ -270,7 +270,7 @@ describe("Adversarial Stress Verification: 6-Step Setup Wizard", () => {
     });
 
     it("enforces basket capacity bounds (1 to 20 instruments)", () => {
-      const helper = createWizardStateHelper();
+      const helper = createWizardStateHelper({ market: "US_EQUITIES" });
 
       // 0 instruments -> rejected
       helper.setState({ instruments: [] });

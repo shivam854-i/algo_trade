@@ -530,6 +530,7 @@ class TestEmpiricalExpiryPolicy:
 # Task 1.4: Single Active Session Enforcement
 # =========================================================================
 
+@pytest.mark.disabled_market
 class TestEmpiricalSingleActiveSessionEnforcement:
     """Stress tests strict single active session isolation and conflict rejections."""
 

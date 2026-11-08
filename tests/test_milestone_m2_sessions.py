@@ -71,6 +71,7 @@ def test_market_sessions_indian_equities():
     assert res_rep.holiday_name == "Republic Day"
 
 
+@pytest.mark.disabled_market
 def test_market_sessions_us_equities_and_dst():
     manager = MarketCalendarManager()
     tz_et = ZoneInfo("America/New_York")
@@ -99,6 +100,7 @@ def test_market_sessions_us_equities_and_dst():
     assert res_mlk.holiday_name == "Martin Luther King Jr. Day"
 
 
+@pytest.mark.disabled_market
 def test_market_sessions_commodities_and_crypto():
     manager = MarketCalendarManager()
     tz_et = ZoneInfo("America/New_York")

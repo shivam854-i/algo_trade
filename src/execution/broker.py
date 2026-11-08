@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from src.execution.frictions import FrictionEvaluator
+from src.execution.guardrails import TokenBucketRateLimiter, validate_nse_order_type
 
 logger = logging.getLogger(__name__)
 
@@ -394,11 +395,15 @@ class PaperBroker:
         max_concurrent_positions: int = 5,
         max_position_exposure_pct: float = 25.0,
         max_portfolio_exposure_pct: float = 85.0,
+        rate_limiter: Optional[TokenBucketRateLimiter] = None,
+        convert_nse_market_orders: bool = True,
     ):
         self.account_id = account_id
         self.max_concurrent_positions = max_concurrent_positions
         self.max_position_exposure_pct = max_position_exposure_pct
         self.max_portfolio_exposure_pct = max_portfolio_exposure_pct
+        self.rate_limiter = rate_limiter or TokenBucketRateLimiter(rate=5.0, capacity=5.0)
+        self.convert_nse_market_orders = convert_nse_market_orders
         self.active_session_id: Optional[str] = None
         self.ledger = TradingLedgerDB(db_path=db_path)
         self._ensure_account(initial_capital)
@@ -753,10 +758,15 @@ class PaperBroker:
         check_duplicate: bool = False,
         enforce_exposure_limits: bool = False,
         session_id: Optional[str] = None,
+        check_rate_limit: bool = True,
     ) -> Optional[Position]:
         """Executes a new virtual position, deducting cash and recording entry prices and fees."""
         ticker = ticker.upper()
         direction = direction.upper()
+
+        if check_rate_limit and self.rate_limiter and not self.rate_limiter.acquire():
+            logger.warning(f"Rejected position open on {ticker}: RATE_LIMIT_EXCEEDED (max 5 orders/sec)")
+            return None
 
         # Guard against unavailable / invalid / NaN prices
         if current_price is None or math.isnan(float(current_price)) or float(current_price) <= 0.0:
@@ -948,6 +958,54 @@ class PaperBroker:
         ticker = ticker.upper()
         direction = direction.upper()
         order_type = order_type.upper()
+
+        # 0. Rate Limiter Guardrail (Capped well below 10 orders/sec)
+        if self.rate_limiter and not self.rate_limiter.acquire():
+            return self._record_order_event(
+                ticker=ticker,
+                direction=direction,
+                order_type=order_type,
+                shares=0.0,
+                price=current_price or 0.0,
+                allocated_capital=0.0,
+                target_price=target_price,
+                stop_price=stop_price,
+                status="REJECTED",
+                limit_price=limit_price or 0.0,
+                market_timestamp=market_timestamp or "",
+                rejection_reason="RATE_LIMIT_EXCEEDED: Exceeded max rate of 5 orders/second.",
+            )
+
+        # 0b. NSE Algo Invariant: SEBI/NSE regulations prohibit automated MARKET orders
+        try:
+            eff_ord_type, eff_lim_p, nse_msg = validate_nse_order_type(
+                ticker=ticker,
+                order_type=order_type,
+                limit_price=limit_price,
+                current_price=current_price,
+                direction=direction,
+                convert_if_market=self.convert_nse_market_orders,
+            )
+            order_type = eff_ord_type
+            if eff_lim_p is not None:
+                limit_price = eff_lim_p
+            if nse_msg:
+                logger.info(nse_msg)
+        except ValueError as err:
+            return self._record_order_event(
+                ticker=ticker,
+                direction=direction,
+                order_type=order_type,
+                shares=0.0,
+                price=current_price or 0.0,
+                allocated_capital=0.0,
+                target_price=target_price,
+                stop_price=stop_price,
+                status="REJECTED",
+                limit_price=limit_price or 0.0,
+                market_timestamp=market_timestamp or "",
+                rejection_reason=f"NSE_ALGO_MARKET_ORDER_PROHIBITED: {str(err)}",
+            )
 
         # 1. Unavailable / Invalid price check
         if current_price is None or math.isnan(float(current_price)) or float(current_price) <= 0.0:
@@ -1172,6 +1230,7 @@ class PaperBroker:
             market_timestamp=market_timestamp,
             check_duplicate=False,
             enforce_exposure_limits=False,
+            check_rate_limit=False,
         )
         if not pos:
             return self._record_order_event(
@@ -1621,6 +1680,29 @@ class PaperBroker:
     ) -> Dict[str, Any]:
         """Queues a virtual order for execution at market open, placing a soft hold on required cash."""
         ticker = ticker.upper()
+
+        # Rate Limiter Guardrail
+        if self.rate_limiter and not self.rate_limiter.acquire():
+            raise ValueError("Order rejected: Rate limit exceeded (max 5 orders/second).")
+
+        # NSE Algo Invariant: SEBI/NSE regulations prohibit automated MARKET orders
+        try:
+            eff_ord_type, eff_lim_p, nse_msg = validate_nse_order_type(
+                ticker=ticker,
+                order_type=order_type,
+                limit_price=limit_price,
+                current_price=current_price,
+                direction=direction,
+                convert_if_market=self.convert_nse_market_orders,
+            )
+            order_type = eff_ord_type
+            if eff_lim_p is not None:
+                limit_price = eff_lim_p
+            if nse_msg:
+                logger.info(nse_msg)
+        except ValueError as err:
+            raise ValueError(f"NSE order rejected: {str(err)}")
+
         summary = self.get_account_summary()
         cash = float(summary.get("current_cash", 0.0))
         reserved = float(summary.get("reserved_cash", 0.0))
@@ -1766,6 +1848,7 @@ class PaperBroker:
                 custom_allocated_capital=alloc_cap,
                 bid_price=bid_price,
                 ask_price=ask_price,
+                check_rate_limit=False,
             )
             if pos:
                 now_str = datetime.now(timezone.utc).isoformat()

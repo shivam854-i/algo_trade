@@ -160,10 +160,12 @@ def isolated_paper_broker(tmp_path: Path) -> PaperBroker:
 
 
 class TestMarketDataIngestionAndHealth:
+    @pytest.mark.disabled_market
     def test_default_us_equities_universe(self):
         """Verify the default paper-trading universe starts with NVDA, AAPL, MSFT, AMD, TSLA."""
         assert DEFAULT_US_EQUITIES == ["NVDA", "AAPL", "MSFT", "AMD", "TSLA"]
 
+    @pytest.mark.disabled_market
     def test_alpaca_snapshot_parsing_and_env_key_isolation(self, monkeypatch):
         """Verify AlpacaProvider reads credentials from environment and parses snapshots accurately."""
         monkeypatch.delenv("ALPACA_API_KEY", raising=False)
@@ -376,6 +378,7 @@ class TestStaleAndMissingDataRejection:
 
 
 class TestMarketHoursEnforcement:
+    @pytest.mark.disabled_market
     def test_nyse_early_close_1300_et_session_enforcement(self):
         cal = MarketCalendarManager()
         tz_et = ZoneInfo("America/New_York")

@@ -21,6 +21,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.backtest.engine import BacktestEngine
+from src.config.markets import (
+    get_enabled_markets,
+    get_market_for_ticker,
+    is_market_enabled,
+    validate_market_enabled,
+)
 from src.execution.auth import AuthManager, UserTierProfile
 from src.execution.broker import PaperBroker
 from src.execution.frictions import FrictionEvaluator
@@ -89,6 +95,7 @@ class RegisterRequest(BaseModel):
 
 class OrderRequest(BaseModel):
     ticker: str = Field(..., description="Asset symbol, e.g. GC=F or NVDA")
+    market: Optional[str] = Field(default=None, description="Optional target market, e.g. NSE_CASH")
     direction: str = Field(default="LONG", description="LONG or SHORT")
     allocation_weight_pct: float = Field(default=10.0, description="Capital allocation percentage")
     order_type: Optional[str] = Field(default="MARKET", description="MARKET or LIMIT")
@@ -516,6 +523,15 @@ def submit_broker_order(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
+        )
+
+    ticker_market = getattr(req, "market", None) or get_market_for_ticker(req.ticker)
+    try:
+        validate_market_enabled(ticker_market)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
         )
 
     global engine
@@ -971,6 +987,13 @@ def get_active_trading_session():
 @app.post("/api/sessions/recommendations", tags=["Trading Sessions"])
 def get_session_recommendations(req: RecommendationRequest):
     """Computes quantitative recommendations with multi-factor screening and setup wizard rationales."""
+    try:
+        validate_market_enabled(req.market)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
     from src.strategy.universe_selector import UniverseSelector
     bot = _get_live_bot()
     selector = UniverseSelector(
@@ -1016,6 +1039,22 @@ def list_trading_sessions(
 @app.post("/api/sessions", tags=["Trading Sessions"], status_code=status.HTTP_201_CREATED)
 def create_trading_session(req: SessionCreateRequest):
     """Validates configuration parameters and creates a new trading session in CREATED state."""
+    try:
+        validate_market_enabled(req.market)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    for ticker in req.instruments:
+        ticker_mkt = get_market_for_ticker(ticker)
+        try:
+            validate_market_enabled(ticker_mkt)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            )
     validate_capital_and_currency(req.market, req.allocated_capital, req.currency)
     validate_instruments_jurisdiction(req.market, req.instruments)
     validate_duration_and_horizon(req.duration_type, req.duration_minutes, req.horizon)
@@ -1054,6 +1093,15 @@ def update_trading_session(session_id: str, req: SessionUpdateRequest):
             detail=f"Cannot update session '{session_id}' while in '{session.status}' state. Only CREATED or PAUSED sessions can be modified.",
         )
     if req.instruments is not None:
+        for ticker in req.instruments:
+            ticker_mkt = get_market_for_ticker(ticker)
+            try:
+                validate_market_enabled(ticker_mkt)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                )
         validate_instruments_jurisdiction(session.market, req.instruments)
     if req.allocated_capital is not None:
         validate_capital_and_currency(session.market, req.allocated_capital, session.currency)
@@ -1211,6 +1259,15 @@ def execute_bot_managed_trade(req: BotTradeRequest):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
         )
+
+    ticker_market = getattr(req, "market", None) or get_market_for_ticker(req.ticker)
+    try:
+        validate_market_enabled(ticker_market)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
     bot = _get_live_bot()
     try:
         return bot.place_bot_managed_trade(
@@ -1277,6 +1334,15 @@ def dashboard_manual_order(req: OrderRequest):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CRITICAL SAFETY LOCK: Real-money brokerage order execution is permanently disabled. Only PAPER mode is permitted.",
+        )
+
+    ticker_market = getattr(req, "market", None) or get_market_for_ticker(req.ticker)
+    try:
+        validate_market_enabled(ticker_market)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
         )
     bot = _get_live_bot()
     tk = req.ticker.upper()

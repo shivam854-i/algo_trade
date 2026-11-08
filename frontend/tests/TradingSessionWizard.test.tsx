@@ -284,15 +284,15 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
       expect(negRes.isValid).toBe(false);
       expect(negRes.errors.capital).toBe("Allocated virtual capital must be strictly positive.");
 
-      // Below lower bound ($999)
+      // Below lower bound (999)
       const belowMinRes = validateWizardStep(5, {
         ...INITIAL_WIZARD_STATE,
         allocatedCapital: 999,
       });
       expect(belowMinRes.isValid).toBe(false);
-      expect(belowMinRes.errors.capital).toContain("between 1,000 and 10,000,000 USD");
+      expect(belowMinRes.errors.capital).toContain(`between 1,000 and 10,000,000 ${INITIAL_WIZARD_STATE.currency}`);
 
-      // Exact lower bound ($1,000) -> valid
+      // Exact lower bound (1,000) -> valid
       const minRes = validateWizardStep(5, {
         ...INITIAL_WIZARD_STATE,
         allocatedCapital: 1000,
@@ -301,7 +301,7 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
       expect(minRes.errors.capital).toBeUndefined();
       expect(isWizardStepValid(5, { ...INITIAL_WIZARD_STATE, allocatedCapital: 1000 })).toBe(true);
 
-      // Exact upper bound ($10,000,000) -> valid
+      // Exact upper bound (10,000,000) -> valid
       const maxRes = validateWizardStep(5, {
         ...INITIAL_WIZARD_STATE,
         allocatedCapital: 10000000,
@@ -309,13 +309,13 @@ describe("Milestone 3: 6-Step Trading Session Setup Wizard", () => {
       expect(maxRes.isValid).toBe(true);
       expect(maxRes.errors.capital).toBeUndefined();
 
-      // Above upper bound ($10,000,001) -> invalid
+      // Above upper bound (10,000,001) -> invalid
       const aboveMaxRes = validateWizardStep(5, {
         ...INITIAL_WIZARD_STATE,
         allocatedCapital: 10000001,
       });
       expect(aboveMaxRes.isValid).toBe(false);
-      expect(aboveMaxRes.errors.capital).toContain("between 1,000 and 10,000,000 USD");
+      expect(aboveMaxRes.errors.capital).toContain(`between 1,000 and 10,000,000 ${INITIAL_WIZARD_STATE.currency}`);
     });
 
     it("renders error alert banner and out-of-range visual styling for invalid capital inputs", () => {

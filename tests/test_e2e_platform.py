@@ -349,6 +349,7 @@ class TestTier1PhysicalMarketSessions:
         t_closed = datetime(2026, 6, 17, 3, 0, 0, tzinfo=timezone.utc)
         assert calendar.get_session_info("RELIANCE.NS", now_utc=t_closed).state == MarketState.CLOSED
 
+    @pytest.mark.disabled_market
     def test_nyse_schedule_enforcement(self, calendar: MarketCalendarManager):
         # Wednesday 14:00 ET -> OPEN
         t_open = datetime(2026, 6, 17, 18, 0, 0, tzinfo=timezone.utc)
@@ -360,6 +361,7 @@ class TestTier1PhysicalMarketSessions:
         t_pre = datetime(2026, 6, 17, 12, 0, 0, tzinfo=timezone.utc)
         assert calendar.get_session_info("NVDA", now_utc=t_pre).state == MarketState.PRE_MARKET
 
+    @pytest.mark.disabled_market
     def test_comex_gold_schedule_enforcement(self, calendar: MarketCalendarManager):
         # Tuesday 12:00 ET -> OPEN
         t_open = datetime(2026, 6, 16, 16, 0, 0, tzinfo=timezone.utc)
@@ -369,6 +371,7 @@ class TestTier1PhysicalMarketSessions:
         t_pause = datetime(2026, 6, 16, 21, 30, 0, tzinfo=timezone.utc)
         assert calendar.get_session_info("GC=F", now_utc=t_pause).state == MarketState.CLOSED
 
+    @pytest.mark.disabled_market
     def test_crypto_24_7_continuous_schedule(self, calendar: MarketCalendarManager):
         # Sunday midnight UTC
         t_sun = datetime(2026, 6, 21, 0, 0, 0, tzinfo=timezone.utc)
@@ -377,6 +380,7 @@ class TestTier1PhysicalMarketSessions:
         assert sess.is_open
         assert sess.countdown_display == "Continuous 24/7"
 
+    @pytest.mark.disabled_market
     def test_forex_24_5_continuous_schedule(self, calendar: MarketCalendarManager):
         # Wednesday 12:00 ET -> OPEN
         t_open = datetime(2026, 6, 17, 16, 0, 0, tzinfo=timezone.utc)
@@ -429,6 +433,7 @@ class TestTier1PriceFreezingAndSimulationDecoupling:
         assert mock_live_bot.live_prices["RELIANCE.NS"] != initial_reliance_price
         assert mock_live_bot.live_prices["RELIANCE.NS"] > initial_reliance_price
 
+    @pytest.mark.disabled_market
     def test_crypto_ticks_continue_while_equities_frozen(self, mock_live_bot: LiveBotController):
         """Unified multi-asset step: Crypto moves while closed Equities stay pinned."""
         mock_live_bot.simulation_mode = False
@@ -696,6 +701,7 @@ class TestTier2BoundaryAndCornerCases:
         assert calendar.get_session_info("NVDA", now_utc=t_nyse_pre).state == MarketState.PRE_MARKET
         assert calendar.get_session_info("NVDA", now_utc=t_nyse_open).state == MarketState.OPEN
 
+    @pytest.mark.disabled_market
     def test_dst_boundary_us_equities(self, calendar: MarketCalendarManager):
         summer_open = datetime(2026, 7, 1, 13, 30, 0, tzinfo=timezone.utc)
         assert calendar.get_session_info("AAPL", now_utc=summer_open).state == MarketState.OPEN
@@ -709,6 +715,7 @@ class TestTier2BoundaryAndCornerCases:
         assert info.state == MarketState.HOLIDAY
         assert info.holiday_name == "Republic Day"
 
+    @pytest.mark.disabled_market
     def test_weekend_transition_cme_gold(self, calendar: MarketCalendarManager):
         fri_dt = datetime(2026, 6, 19, 21, 1, 0, tzinfo=timezone.utc)
         assert calendar.get_session_info("GC=F", now_utc=fri_dt).state == MarketState.WEEKEND
@@ -778,6 +785,7 @@ class TestTier3CrossFeatureCombinations:
         assert executed[0].allocated_capital == 12000.0
         assert len(isolated_broker.get_pending_orders("RELIANCE.NS")) == 0
 
+    @pytest.mark.disabled_market
     def test_simultaneous_price_freeze_and_continuous_crypto(
         self, mock_live_bot: LiveBotController
     ):
@@ -843,6 +851,7 @@ class TestTier3CrossFeatureCombinations:
 class TestTier4RealWorldScenarios:
     """Multi-asset portfolio execution and background tab hidden lifecycle simulation."""
 
+    @pytest.mark.disabled_market
     def test_multi_asset_portfolio_execution(self, isolated_broker: PaperBroker):
         # 1. BTC-USD: Market is open -> fills immediately
         btc_pos = isolated_broker.open_position("BTC-USD", "LONG", 65000.0, 72000.0, 58000.0, custom_allocated_capital=25000.0)

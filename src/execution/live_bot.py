@@ -39,18 +39,24 @@ from src.pipeline import MarketPredictionEngine, SingleAssetAnalysis
 
 logger = logging.getLogger(__name__)
 
+from src.config.markets import NIFTY_50_TICKERS, get_default_universe
+
 # Global default calendar instance
 _default_calendar = MarketCalendarManager()
 
-# Primary US Equities default universe + multi-asset catalog for extensible selection
+# Retain DEFAULT_US_EQUITIES constant for backward compatibility
 DEFAULT_US_EQUITIES: List[str] = ["NVDA", "AAPL", "MSFT", "AMD", "TSLA"]
+
+# Default NSE Equities universe (50 Nifty constituents)
+DEFAULT_NSE_EQUITIES: List[str] = list(NIFTY_50_TICKERS)
+DEFAULT_UNIVERSE: List[str] = list(NIFTY_50_TICKERS)
 
 ASSET_CATALOG = {
     "US_EQUITIES": ["NVDA", "AAPL", "MSFT", "AMD", "TSLA", "AMZN", "GOOGL", "META", "NFLX", "PLTR"],
     "CRYPTO": ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD"],
     "COMMODITIES": ["GC=F", "SI=F", "CL=F"],
     "FOREX": ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
-    "INDIAN_NSE": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "TATAMOTORS.NS", "ICICIBANK.NS", "SBIN.NS"],
+    "INDIAN_NSE": list(NIFTY_50_TICKERS),
 }
 
 from src.strategy.horizon_mapper import HorizonMapper, HorizonParameters
@@ -97,7 +103,7 @@ SEARCHABLE_INSTRUMENTS: List[Dict[str, str]] = [
     {"ticker": "SPY", "name": "SPDR S&P 500 ETF Trust", "category": "US_EQUITIES", "exchange": "NYSE", "sector": "Index ETF"},
     {"ticker": "QQQ", "name": "Invesco QQQ Trust (NASDAQ-100)", "category": "US_EQUITIES", "exchange": "NASDAQ", "sector": "Index ETF"},
     {"ticker": "IWM", "name": "iShares Russell 2000 ETF", "category": "US_EQUITIES", "exchange": "NYSE", "sector": "Small-Cap ETF"},
-    # Indian Equities (NSE)
+    # Indian Equities (NSE Nifty 50 Constituents)
     {"ticker": "RELIANCE.NS", "name": "Reliance Industries Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Energy, Telecom & Retail"},
     {"ticker": "TCS.NS", "name": "Tata Consultancy Services Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "IT Services"},
     {"ticker": "HDFCBANK.NS", "name": "HDFC Bank Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Private Banking"},
@@ -105,19 +111,51 @@ SEARCHABLE_INSTRUMENTS: List[Dict[str, str]] = [
     {"ticker": "ICICIBANK.NS", "name": "ICICI Bank Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Private Banking"},
     {"ticker": "SBIN.NS", "name": "State Bank of India (SBI)", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "PSU Banking"},
     {"ticker": "BHARTIARTL.NS", "name": "Bharti Airtel Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Telecom"},
-    {"ticker": "TATAMOTORS.NS", "name": "Tata Motors Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles & EV"},
     {"ticker": "ITC.NS", "name": "ITC Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "FMCG & Hospitality"},
+    {"ticker": "KOTAKBANK.NS", "name": "Kotak Mahindra Bank Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Private Banking"},
     {"ticker": "LT.NS", "name": "Larsen & Toubro Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Infrastructure & Engineering"},
     {"ticker": "AXISBANK.NS", "name": "Axis Bank Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Private Banking"},
+    {"ticker": "HINDUNILVR.NS", "name": "Hindustan Unilever Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "FMCG"},
     {"ticker": "BAJFINANCE.NS", "name": "Bajaj Finance Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "NBFC & Consumer Finance"},
     {"ticker": "MARUTI.NS", "name": "Maruti Suzuki India Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles"},
-    {"ticker": "SUNPHARMA.NS", "name": "Sun Pharmaceutical Industries", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Pharmaceuticals"},
-    {"ticker": "WIPRO.NS", "name": "Wipro Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "IT Services"},
+    {"ticker": "ASIANPAINT.NS", "name": "Asian Paints Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Consumer Goods & Paints"},
     {"ticker": "HCLTECH.NS", "name": "HCL Technologies Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "IT Services"},
-    {"ticker": "ADANIENT.NS", "name": "Adani Enterprises Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Infrastructure & Energy"},
+    {"ticker": "SUNPHARMA.NS", "name": "Sun Pharmaceutical Industries", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Pharmaceuticals"},
+    {"ticker": "TITAN.NS", "name": "Titan Company Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Consumer Durables & Jewelry"},
+    {"ticker": "ULTRACEMCO.NS", "name": "UltraTech Cement Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Cement & Materials"},
     {"ticker": "TATASTEEL.NS", "name": "Tata Steel Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Metals & Mining"},
     {"ticker": "NTPC.NS", "name": "NTPC Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Power Generation"},
+    {"ticker": "POWERGRID.NS", "name": "Power Grid Corporation of India", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Power Transmission"},
+    {"ticker": "ONGC.NS", "name": "Oil & Natural Gas Corporation", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Energy & Oil"},
+    {"ticker": "M&M.NS", "name": "Mahindra & Mahindra Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles"},
+    {"ticker": "JSWSTEEL.NS", "name": "JSW Steel Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Metals & Mining"},
+    {"ticker": "COALINDIA.NS", "name": "Coal India Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Mining & Energy"},
+    {"ticker": "BAJAJFINSV.NS", "name": "Bajaj Finserv Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Financial Services"},
+    {"ticker": "ADANIENT.NS", "name": "Adani Enterprises Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Infrastructure & Energy"},
+    {"ticker": "ADANIPORTS.NS", "name": "Adani Ports and Special Economic Zone", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Ports & Logistics"},
+    {"ticker": "BPCL.NS", "name": "Bharat Petroleum Corporation Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Energy & Refining"},
+    {"ticker": "GRASIM.NS", "name": "Grasim Industries Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Materials & Textiles"},
+    {"ticker": "CIPLA.NS", "name": "Cipla Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Pharmaceuticals"},
+    {"ticker": "NESTLEIND.NS", "name": "Nestle India Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "FMCG & Food"},
+    {"ticker": "WIPRO.NS", "name": "Wipro Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "IT Services"},
+    {"ticker": "TATACONSUM.NS", "name": "Tata Consumer Products Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "FMCG"},
+    {"ticker": "DRREDDY.NS", "name": "Dr. Reddy's Laboratories", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Pharmaceuticals"},
+    {"ticker": "EICHERMOT.NS", "name": "Eicher Motors Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles"},
+    {"ticker": "HEROMOTOCO.NS", "name": "Hero MotoCorp Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles"},
+    {"ticker": "DIVISLAB.NS", "name": "Divi's Laboratories Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Pharmaceuticals"},
+    {"ticker": "HINDALCO.NS", "name": "Hindalco Industries Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Metals & Aluminum"},
+    {"ticker": "APOLLOHOSP.NS", "name": "Apollo Hospitals Enterprise", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Healthcare"},
+    {"ticker": "SHRIRAMFIN.NS", "name": "Shriram Finance Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Financial Services"},
+    {"ticker": "TRENT.NS", "name": "Trent Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Retail & Fashion"},
+    {"ticker": "BEL.NS", "name": "Bharat Electronics Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Aerospace & Defense"},
+    {"ticker": "BRITANNIA.NS", "name": "Britannia Industries Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "FMCG & Food"},
+    {"ticker": "SBILIFE.NS", "name": "SBI Life Insurance Company", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Life Insurance"},
+    {"ticker": "HDFCLIFE.NS", "name": "HDFC Life Insurance Company", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Life Insurance"},
+    {"ticker": "TECHM.NS", "name": "Tech Mahindra Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "IT Services"},
+    {"ticker": "BAJAJ-AUTO.NS", "name": "Bajaj Auto Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles"},
+    {"ticker": "INDUSINDBK.NS", "name": "IndusInd Bank Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Private Banking"},
     {"ticker": "HAL.NS", "name": "Hindustan Aeronautics Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Aerospace & Defense"},
+    {"ticker": "TATAMOTORS.NS", "name": "Tata Motors Ltd.", "category": "INDIAN_NSE", "exchange": "NSE", "sector": "Automobiles & EV"},
     # Cryptocurrencies (24/7)
     {"ticker": "BTC-USD", "name": "Bitcoin (BTC / USD)", "category": "CRYPTO", "exchange": "CRYPTO 24/7", "sector": "Layer-1 Digital Asset"},
     {"ticker": "ETH-USD", "name": "Ethereum (ETH / USD)", "category": "CRYPTO", "exchange": "CRYPTO 24/7", "sector": "Smart Contracts"},
@@ -189,8 +227,8 @@ class LiveBotController:
         self.lookback_period: str = "1y"
         self._active_session_mock: Optional[Any] = None
 
-        # Default to the 5 core US equities (NVDA, AAPL, MSFT, AMD, TSLA), extensible via update_asset_selection
-        default_list = list(initial_watchlist) if initial_watchlist else list(DEFAULT_US_EQUITIES)
+        # Default to Nifty 50 constituents (NSE_CASH focus)
+        default_list = list(initial_watchlist) if initial_watchlist else list(DEFAULT_NSE_EQUITIES)
         self.watchlist: List[str] = default_list
         self.armed_tickers: Set[str] = set(default_list)
 
@@ -307,7 +345,9 @@ class LiveBotController:
             f"Booting SYNAPSE-TITAN Paper-Trading Engine on {self.gpu_profile.device_name} "
             f"(Virtual Capital: $100,000.00 | Mode: PAPER_TRADING_ONLY)...",
         )
-        portfolio = self.engine.analyze_portfolio(self.watchlist, period="1y", interval="1d")
+        # Fast boot: seed initial forecasts with core watchlist
+        seed_tickers = self.watchlist[:5] if len(self.watchlist) > 5 else self.watchlist
+        portfolio = self.engine.analyze_portfolio(seed_tickers, period="1y", interval="1d")
         self.analyses = portfolio.single_analyses
         self.hrp_weights = portfolio.hrp_portfolio_weights
 
@@ -692,6 +732,17 @@ class LiveBotController:
         vol_bar = max(res.volatility_cone.expected_vol_annualized / np.sqrt(252.0), 0.012)
 
         ord_type = (order_type or "MARKET").strip().upper()
+        is_nse = tk.endswith((".NS", ".BO")) or tk.startswith(("^NSE", "^BS")) or getattr(res, "market_jurisdiction", "") in ("NSE_CASH", "INDIAN_NSE")
+        if is_nse and ord_type == "MARKET":
+            lpp_pct = 0.01
+            ord_type = "LIMIT"
+            raw_ref = q.ask_price if (resolved_dir == "LONG" and q and q.is_valid and q.ask_price > 0) else curr_p
+            limit_price = round(raw_ref * (1.0 + lpp_pct if resolved_dir == "LONG" else 1.0 - lpp_pct), decimals)
+            self.log_event(
+                "RISK",
+                f"NSE Algo Invariant: Automated MARKET order for {tk} converted to LIMIT with {lpp_pct*100:.1f}% Limit Price Protection @ {limit_price:,.{decimals}f}.",
+            )
+
         if ord_type == "LIMIT" and limit_price is not None and limit_price > 0:
             ref_entry_p = float(limit_price)
         elif q and q.is_valid and q.ask_price > 0 and q.bid_price > 0:
@@ -1265,6 +1316,17 @@ class LiveBotController:
                                         sl_p = round(ref_entry_p * (1.0 + sl_mult * vol_bar), decimals)
 
                                 alloc_cap_order = min(alloc_item.allocated_capital, deployable_capital)
+
+                                # Enforce NSE algorithmic invariant: automated orders must have Limit Price Protection
+                                is_nse = tk.endswith((".NS", ".BO")) or tk.startswith(("^NSE", "^BS")) or getattr(r, "market_jurisdiction", "") in ("NSE_CASH", "INDIAN_NSE")
+                                if is_nse:
+                                    lpp_pct = 0.01
+                                    lpp_limit_p = round(ref_entry_p * (1.0 + lpp_pct if direction == "LONG" else 1.0 - lpp_pct), decimals)
+                                    self.log_event(
+                                        "RISK",
+                                        f"[NSE-ALGO] Invariant Enforced: Automated LIMIT order with {lpp_pct*100:.1f}% LPP @ {lpp_limit_p:,.{decimals}f} for {direction} {tk}.",
+                                    )
+
                                 pos = self.broker.open_position(
                                     ticker=tk,
                                     direction=direction,

@@ -24,16 +24,6 @@ interface MarketDefinition {
 
 const MARKETS: MarketDefinition[] = [
   {
-    id: "US_EQUITIES",
-    title: "US Equities",
-    subtitle: "NYSE & NASDAQ Tech & Liquid Equities",
-    currency: "USD",
-    currencySymbol: "$",
-    tradingHours: "09:30–16:00 ET",
-    sessionKey: "US_MARKETS",
-    isSupported: true,
-  },
-  {
     id: "INDIAN_NSE",
     title: "Indian Equities",
     subtitle: "NSE Nifty 50 Cash & Index Market",
@@ -44,6 +34,17 @@ const MARKETS: MarketDefinition[] = [
     isSupported: true,
   },
   {
+    id: "US_EQUITIES",
+    title: "US Equities",
+    subtitle: "NYSE & NASDAQ Tech & Liquid Equities",
+    currency: "USD",
+    currencySymbol: "$",
+    tradingHours: "09:30–16:00 ET",
+    sessionKey: "US_MARKETS",
+    isSupported: false,
+    disabledReason: "Disabled (NSE-Only Focus Active)",
+  },
+  {
     id: "CRYPTO",
     title: "Cryptocurrencies",
     subtitle: "BTC, ETH, SOL Institutional Feeds",
@@ -51,7 +52,8 @@ const MARKETS: MarketDefinition[] = [
     currencySymbol: "$",
     tradingHours: "24/7/365 Continuous",
     sessionKey: "CRYPTO_247",
-    isSupported: true,
+    isSupported: false,
+    disabledReason: "Disabled (NSE-Only Focus Active)",
   },
   {
     id: "COMMODITIES",
@@ -61,7 +63,8 @@ const MARKETS: MarketDefinition[] = [
     currencySymbol: "$",
     tradingHours: "23h/day Mon–Fri",
     sessionKey: "CME_GLOBEX",
-    isSupported: true,
+    isSupported: false,
+    disabledReason: "Disabled (NSE-Only Focus Active)",
   },
   {
     id: "FOREX",
@@ -70,7 +73,8 @@ const MARKETS: MarketDefinition[] = [
     currency: "USD",
     currencySymbol: "$",
     tradingHours: "24/5 (Sun 17:00–Fri 17:00 ET)",
-    isSupported: true,
+    isSupported: false,
+    disabledReason: "Disabled (NSE-Only Focus Active)",
   },
   {
     id: "EU_EQUITIES",
@@ -80,7 +84,7 @@ const MARKETS: MarketDefinition[] = [
     currencySymbol: "€",
     tradingHours: "08:00–16:30 GMT",
     isSupported: false,
-    disabledReason: "Provider Integration Coming Soon",
+    disabledReason: "Disabled (Provider Integration Coming Soon)",
   },
 ];
 
@@ -130,8 +134,9 @@ export const Step1MarketSelection: React.FC<Step1MarketSelectionProps> = ({
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">{m.subtitle}</p>
                 </div>
-                <div className="mt-3 pt-2 border-t border-slate-800/40 text-[10px] font-mono text-slate-600">
-                  {m.disabledReason}
+                <div className="mt-3 pt-2 border-t border-slate-800/40 flex items-center justify-between text-[10px] font-mono text-slate-600">
+                  <span>{m.disabledReason}</span>
+                  <span>{`${m.currency} (${m.currencySymbol})`}</span>
                 </div>
               </div>
             );

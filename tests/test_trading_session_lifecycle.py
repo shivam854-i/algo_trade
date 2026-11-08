@@ -462,6 +462,7 @@ class TestMarketDataOutageSafeguards:
 class TestFastAPISessionEndpoints:
     """End-to-end integration tests for all 11 REST API session endpoints via FastAPI TestClient."""
 
+    @pytest.mark.disabled_market
     def test_full_rest_session_lifecycle(self):
         client = TestClient(app)
 
@@ -595,6 +596,7 @@ class TestFastAPISessionEndpoints:
         assert "realized_pnl" in perf
         assert "win_rate_pct" in perf
 
+    @pytest.mark.disabled_market
     def test_recommendations_endpoint(self):
         client = TestClient(app)
         r_rec = client.post("/api/sessions/recommendations", json={
