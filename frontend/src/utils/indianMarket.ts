@@ -3,110 +3,158 @@
  * Strict NSE/BSE quant conventions, INR currency grouping, and Indian numbering (Lakhs & Crores).
  */
 
+export interface NSEInstrument {
+  ticker: string;
+  name: string;
+  sector: string;
+  index: "NIFTY_50" | "NIFTY_NEXT_50" | "NIFTY_MIDCAP" | "SENSEX";
+  marketCapTier: "Large Cap" | "Mid Cap" | "Small Cap";
+  exchange: "NSE" | "BSE";
+  basePrice?: number;
+}
+
+export const NSE_MASTER_DIRECTORY: NSEInstrument[] = [
+  // NIFTY 50 Blue Chips
+  { ticker: "RELIANCE.NS", name: "Reliance Industries Ltd.", sector: "Energy & Oil/Gas", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1324.0 },
+  { ticker: "TCS.NS", name: "Tata Consultancy Services Ltd.", sector: "Information Technology", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2498.8 },
+  { ticker: "HDFCBANK.NS", name: "HDFC Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 784.1 },
+  { ticker: "INFY.NS", name: "Infosys Ltd.", sector: "Information Technology", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1171.6 },
+  { ticker: "ICICIBANK.NS", name: "ICICI Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1565.0 },
+  { ticker: "SBIN.NS", name: "State Bank of India (SBI)", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 812.4 },
+  { ticker: "BHARTIARTL.NS", name: "Bharti Airtel Ltd.", sector: "Telecom", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1680.5 },
+  { ticker: "ITC.NS", name: "ITC Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 485.2 },
+  { ticker: "KOTAKBANK.NS", name: "Kotak Mahindra Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1740.0 },
+  { ticker: "LT.NS", name: "Larsen & Toubro Ltd.", sector: "Infrastructure", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 3560.0 },
+  { ticker: "AXISBANK.NS", name: "Axis Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1145.0 },
+  { ticker: "HINDUNILVR.NS", name: "Hindustan Unilever Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2420.0 },
+  { ticker: "BAJFINANCE.NS", name: "Bajaj Finance Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 6850.0 },
+  { ticker: "MARUTI.NS", name: "Maruti Suzuki India Ltd.", sector: "Automobiles", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 11200.0 },
+  { ticker: "ASIANPAINT.NS", name: "Asian Paints Ltd.", sector: "Consumer Tech", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2380.0 },
+  { ticker: "HCLTECH.NS", name: "HCL Technologies Ltd.", sector: "Information Technology", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1840.0 },
+  { ticker: "SUNPHARMA.NS", name: "Sun Pharmaceutical Ind. Ltd.", sector: "Pharmaceuticals", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1760.0 },
+  { ticker: "TITAN.NS", name: "Titan Company Ltd.", sector: "Consumer Tech", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 3240.0 },
+  { ticker: "ULTRACEMCO.NS", name: "UltraTech Cement Ltd.", sector: "Infrastructure", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 11150.0 },
+  { ticker: "TATASTEEL.NS", name: "Tata Steel Ltd.", sector: "Metals & Mining", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 148.5 },
+  { ticker: "NTPC.NS", name: "NTPC Ltd.", sector: "Energy & Power", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 382.0 },
+  { ticker: "POWERGRID.NS", name: "Power Grid Corp of India Ltd.", sector: "Energy & Power", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 318.5 },
+  { ticker: "ONGC.NS", name: "Oil & Natural Gas Corp Ltd.", sector: "Energy & Oil/Gas", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 262.0 },
+  { ticker: "M&M.NS", name: "Mahindra & Mahindra Ltd.", sector: "Automobiles", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2880.0 },
+  { ticker: "JSWSTEEL.NS", name: "JSW Steel Ltd.", sector: "Metals & Mining", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 945.0 },
+  { ticker: "COALINDIA.NS", name: "Coal India Ltd.", sector: "Energy & Power", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 428.0 },
+  { ticker: "BAJAJFINSV.NS", name: "Bajaj Finserv Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1610.0 },
+  { ticker: "ADANIENT.NS", "name": "Adani Enterprises Ltd.", sector: "Infrastructure", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2980.0 },
+  { ticker: "ADANIPORTS.NS", name: "Adani Ports & SEZ Ltd.", sector: "Infrastructure", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1320.0 },
+  { ticker: "BPCL.NS", name: "Bharat Petroleum Corp Ltd.", sector: "Energy & Oil/Gas", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 315.0 },
+  { ticker: "GRASIM.NS", name: "Grasim Industries Ltd.", sector: "Infrastructure", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2540.0 },
+  { ticker: "CIPLA.NS", name: "Cipla Ltd.", sector: "Pharmaceuticals", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1520.0 },
+  { ticker: "NESTLEIND.NS", name: "Nestle India Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2280.0 },
+  { ticker: "WIPRO.NS", name: "Wipro Ltd.", sector: "Information Technology", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 565.0 },
+  { ticker: "TATACONSUM.NS", name: "Tata Consumer Products Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 980.0 },
+  { ticker: "DRREDDY.NS", name: "Dr. Reddy's Laboratories Ltd.", sector: "Pharmaceuticals", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1260.0 },
+  { ticker: "EICHERMOT.NS", name: "Eicher Motors Ltd.", sector: "Automobiles", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 4720.0 },
+  { ticker: "HEROMOTOCO.NS", name: "Hero MotoCorp Ltd.", sector: "Automobiles", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 4890.0 },
+  { ticker: "DIVISLAB.NS", name: "Divi's Laboratories Ltd.", sector: "Pharmaceuticals", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 5820.0 },
+  { ticker: "HINDALCO.NS", name: "Hindalco Industries Ltd.", sector: "Metals & Mining", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 655.0 },
+  { ticker: "APOLLOHOSP.NS", name: "Apollo Hospitals Enterprise Ltd.", sector: "Pharmaceuticals", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 6940.0 },
+  { ticker: "SHRIRAMFIN.NS", name: "Shriram Finance Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 3260.0 },
+  { ticker: "TRENT.NS", name: "Trent Ltd.", sector: "Consumer Tech", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 6750.0 },
+  { ticker: "BEL.NS", name: "Bharat Electronics Ltd.", sector: "Defense & Aerospace", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 298.0 },
+  { ticker: "BRITANNIA.NS", name: "Britannia Industries Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 4980.0 },
+  { ticker: "SBILIFE.NS", name: "SBI Life Insurance Co. Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1540.0 },
+  { ticker: "HDFCLIFE.NS", name: "HDFC Life Insurance Co. Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 675.0 },
+  { ticker: "TECHM.NS", name: "Tech Mahindra Ltd.", sector: "Information Technology", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1680.0 },
+  { ticker: "BAJAJ-AUTO.NS", name: "Bajaj Auto Ltd.", sector: "Automobiles", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 9480.0 },
+  { ticker: "INDUSINDBK.NS", name: "IndusInd Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1040.0 },
+
+  // NIFTY NEXT 50 High Growth & Leaders
+  { ticker: "HAL.NS", name: "Hindustan Aeronautics Ltd.", sector: "Defense & Aerospace", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 4320.0 },
+  { ticker: "ZOMATO.NS", name: "Zomato Ltd.", sector: "Consumer Tech", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 265.0 },
+  { ticker: "JIOFIN.NS", name: "Jio Financial Services Ltd.", sector: "Banking & Finance", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 318.0 },
+  { ticker: "TATAPOWER.NS", name: "Tata Power Company Ltd.", sector: "Energy & Power", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 412.0 },
+  { ticker: "POLYCAB.NS", name: "Polycab India Ltd.", sector: "Infrastructure", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 6840.0 },
+  { ticker: "IRFC.NS", name: "Indian Railway Finance Corp", sector: "Railways", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 148.0 },
+  { ticker: "CHOLAFIN.NS", name: "Cholamandalam Investment & Fin", sector: "Banking & Finance", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1280.0 },
+  { ticker: "PERSISTENT.NS", name: "Persistent Systems Ltd.", sector: "Information Technology", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 5460.0 },
+  { ticker: "MAXHEALTH.NS", name: "Max Healthcare Institute", sector: "Pharmaceuticals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 980.0 },
+  { ticker: "DIXON.NS", name: "Dixon Technologies India", sector: "Consumer Tech", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 14600.0 },
+  { ticker: "PIDILITIND.NS", name: "Pidilite Industries Ltd.", sector: "Chemicals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 3080.0 },
+  { ticker: "VEDL.NS", name: "Vedanta Ltd.", sector: "Metals & Mining", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 462.0 },
+  { ticker: "SIEMENS.NS", name: "Siemens India Ltd.", sector: "Infrastructure", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 7120.0 },
+  { ticker: "ABB.NS", name: "ABB India Ltd.", sector: "Infrastructure", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 7480.0 },
+  { ticker: "HAVELLS.NS", name: "Havells India Ltd.", sector: "Consumer Tech", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1740.0 },
+  { ticker: "DLF.NS", name: "DLF Ltd.", sector: "Realty", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 840.0 },
+  { ticker: "GODREJPROP.NS", name: "Godrej Properties Ltd.", sector: "Realty", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2840.0 },
+  { ticker: "AMBUJACEM.NS", name: "Ambuja Cements Ltd.", sector: "Infrastructure", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 560.0 },
+  { ticker: "BANKBARODA.NS", name: "Bank of Baroda", sector: "Banking & Finance", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 242.0 },
+  { ticker: "PNB.NS", name: "Punjab National Bank", sector: "Banking & Finance", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 104.0 },
+  { ticker: "CANBK.NS", name: "Canara Bank", sector: "Banking & Finance", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 102.0 },
+  { ticker: "GAIL.NS", name: "GAIL (India) Ltd.", sector: "Energy & Oil/Gas", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 204.0 },
+  { ticker: "IOC.NS", name: "Indian Oil Corporation", sector: "Energy & Oil/Gas", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 142.0 },
+  { ticker: "INDIGO.NS", name: "InterGlobe Aviation (IndiGo)", sector: "Infrastructure", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 4260.0 },
+  { ticker: "MOTHERSON.NS", name: "Samvardhana Motherson Int.", sector: "Automobiles", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 168.0 },
+  { ticker: "LTIM.NS", name: "LTIMindtree Ltd.", sector: "Information Technology", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 5890.0 },
+  { ticker: "NAUKRI.NS", name: "Info Edge (India) Ltd.", sector: "Consumer Tech", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 7850.0 },
+  { ticker: "MARICO.NS", name: "Marico Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 642.0 },
+  { ticker: "DABUR.NS", name: "Dabur India Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 512.0 },
+  { ticker: "TORNTPHARM.NS", name: "Torrent Pharmaceuticals", sector: "Pharmaceuticals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 3240.0 },
+  { ticker: "ZYDUSLIFE.NS", name: "Zydus Lifesciences Ltd.", sector: "Pharmaceuticals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 1010.0 },
+  { ticker: "LUPIN.NS", name: "Lupin Ltd.", sector: "Pharmaceuticals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2180.0 },
+  { ticker: "VBL.NS", name: "Varun Beverages Ltd.", sector: "Fast Moving Consumer Goods", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 620.0 },
+  { ticker: "SRF.NS", name: "SRF Ltd.", sector: "Chemicals", index: "NIFTY_NEXT_50", marketCapTier: "Large Cap", exchange: "NSE", basePrice: 2360.0 },
+
+  // NIFTY Midcap & Smallcap Momentum Stocks
+  { ticker: "SUZLON.NS", name: "Suzlon Energy Ltd.", sector: "Energy & Power", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 64.5 },
+  { ticker: "RVNL.NS", name: "Rail Vikas Nigam Ltd.", sector: "Railways", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 420.0 },
+  { ticker: "IRCTC.NS", name: "Indian Railway Catering & Tour", sector: "Railways", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 810.0 },
+  { ticker: "MAZDOCK.NS", name: "Mazagon Dock Shipbuilders", sector: "Defense & Aerospace", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 4420.0 },
+  { ticker: "COCHINSHIP.NS", name: "Cochin Shipyard Ltd.", sector: "Defense & Aerospace", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1560.0 },
+  { ticker: "FEDERALBNK.NS", name: "The Federal Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 198.0 },
+  { ticker: "IDFCFIRSTB.NS", name: "IDFC First Bank Ltd.", sector: "Banking & Finance", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 67.5 },
+  { ticker: "AUBANK.NS", name: "AU Small Finance Bank", sector: "Banking & Finance", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 590.0 },
+  { ticker: "ASHOKLEY.NS", name: "Ashok Leyland Ltd.", sector: "Automobiles", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 224.0 },
+  { ticker: "BHARATFORG.NS", name: "Bharat Forge Ltd.", sector: "Automobiles", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1380.0 },
+  { ticker: "TATAELXSI.NS", name: "Tata Elxsi Ltd.", sector: "Information Technology", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 6680.0 },
+  { ticker: "KPITTECH.NS", name: "KPIT Technologies Ltd.", sector: "Information Technology", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1420.0 },
+  { ticker: "COFORGE.NS", name: "Coforge Ltd.", sector: "Information Technology", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 8450.0 },
+  { ticker: "MPHASIS.NS", name: "Mphasis Ltd.", sector: "Information Technology", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 2940.0 },
+  { ticker: "DEEPAKNTR.NS", name: "Deepak Nitrite Ltd.", sector: "Chemicals", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 2680.0 },
+  { ticker: "TATACHEM.NS", name: "Tata Chemicals Ltd.", sector: "Chemicals", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1040.0 },
+  { ticker: "BIOCON.NS", name: "Biocon Ltd.", sector: "Pharmaceuticals", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 345.0 },
+  { ticker: "VOLTAS.NS", name: "Voltas Ltd.", sector: "Consumer Tech", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1720.0 },
+  { ticker: "PRESTIGE.NS", name: "Prestige Estates Projects", sector: "Realty", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1680.0 },
+  { ticker: "OBEROIRLTY.NS", name: "Oberoi Realty Ltd.", sector: "Realty", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 1980.0 },
+  { ticker: "NHPC.NS", name: "NHPC Ltd.", sector: "Energy & Power", index: "NIFTY_MIDCAP", marketCapTier: "Mid Cap", exchange: "NSE", basePrice: 82.0 },
+];
+
+// Mapping of Ticker to Full Company Name
 export const INDIAN_EQUITY_NAMES: Record<string, string> = {
-  "RELIANCE.NS": "Reliance Industries Ltd.",
-  "TCS.NS": "Tata Consultancy Services Ltd.",
-  "HDFCBANK.NS": "HDFC Bank Ltd.",
-  "INFY.NS": "Infosys Ltd.",
-  "ICICIBANK.NS": "ICICI Bank Ltd.",
-  "SBIN.NS": "State Bank of India",
-  "BHARTIARTL.NS": "Bharti Airtel Ltd.",
-  "ITC.NS": "ITC Ltd.",
-  "KOTAKBANK.NS": "Kotak Mahindra Bank Ltd.",
-  "LT.NS": "Larsen & Toubro Ltd.",
-  "AXISBANK.NS": "Axis Bank Ltd.",
-  "HINDUNILVR.NS": "Hindustan Unilever Ltd.",
-  "BAJFINANCE.NS": "Bajaj Finance Ltd.",
-  "MARUTI.NS": "Maruti Suzuki India Ltd.",
-  "ASIANPAINT.NS": "Asian Paints Ltd.",
-  "HCLTECH.NS": "HCL Technologies Ltd.",
-  "SUNPHARMA.NS": "Sun Pharmaceutical Ind. Ltd.",
-  "TITAN.NS": "Titan Company Ltd.",
-  "ULTRACEMCO.NS": "UltraTech Cement Ltd.",
-  "TATASTEEL.NS": "Tata Steel Ltd.",
-  "NTPC.NS": "NTPC Ltd.",
-  "POWERGRID.NS": "Power Grid Corp of India Ltd.",
-  "ONGC.NS": "Oil & Natural Gas Corp Ltd.",
-  "M&M.NS": "Mahindra & Mahindra Ltd.",
-  "JSWSTEEL.NS": "JSW Steel Ltd.",
-  "COALINDIA.NS": "Coal India Ltd.",
-  "BAJAJFINSV.NS": "Bajaj Finserv Ltd.",
-  "ADANIENT.NS": "Adani Enterprises Ltd.",
-  "ADANIPORTS.NS": "Adani Ports & SEZ Ltd.",
-  "BPCL.NS": "Bharat Petroleum Corp Ltd.",
-  "GRASIM.NS": "Grasim Industries Ltd.",
-  "CIPLA.NS": "Cipla Ltd.",
-  "NESTLEIND.NS": "Nestle India Ltd.",
-  "WIPRO.NS": "Wipro Ltd.",
-  "TATACONSUM.NS": "Tata Consumer Products Ltd.",
-  "DRREDDY.NS": "Dr. Reddy's Laboratories Ltd.",
-  "EICHERMOT.NS": "Eicher Motors Ltd.",
-  "HEROMOTOCO.NS": "Hero MotoCorp Ltd.",
-  "DIVISLAB.NS": "Divi's Laboratories Ltd.",
-  "HINDALCO.NS": "Hindalco Industries Ltd.",
-  "APOLLOHOSP.NS": "Apollo Hospitals Enterprise Ltd.",
-  "SHRIRAMFIN.NS": "Shriram Finance Ltd.",
-  "TRENT.NS": "Trent Ltd.",
-  "BEL.NS": "Bharat Electronics Ltd.",
-  "BRITANNIA.NS": "Britannia Industries Ltd.",
-  "SBILIFE.NS": "SBI Life Insurance Co. Ltd.",
-  "HDFCLIFE.NS": "HDFC Life Insurance Co. Ltd.",
-  "TECHM.NS": "Tech Mahindra Ltd.",
-  "BAJAJ-AUTO.NS": "Bajaj Auto Ltd.",
-  "INDUSINDBK.NS": "IndusInd Bank Ltd.",
+  ...Object.fromEntries(NSE_MASTER_DIRECTORY.map((i) => [i.ticker, i.name])),
+  // BSE 30 Aliases
+  "RELIANCE.BO": "Reliance Industries Ltd. (BSE)",
+  "TCS.BO": "Tata Consultancy Services (BSE)",
+  "HDFCBANK.BO": "HDFC Bank Ltd. (BSE)",
+  "INFY.BO": "Infosys Ltd. (BSE)",
+  "ICICIBANK.BO": "ICICI Bank Ltd. (BSE)",
+  "SBIN.BO": "State Bank of India (BSE)",
+  "BHARTIARTL.BO": "Bharti Airtel Ltd. (BSE)",
+  "ITC.BO": "ITC Ltd. (BSE)",
+  "KOTAKBANK.BO": "Kotak Mahindra Bank (BSE)",
+  "LT.BO": "Larsen & Toubro Ltd. (BSE)",
 };
 
+// Mapping of Ticker to Industry Sector
 export const SECTOR_BY_TICKER: Record<string, string> = {
-  "RELIANCE.NS": "Energy & Petrochemicals",
-  "TCS.NS": "Information Technology",
-  "HDFCBANK.NS": "Financial Services",
-  "INFY.NS": "Information Technology",
-  "ICICIBANK.NS": "Financial Services",
-  "SBIN.NS": "Financial Services",
-  "BHARTIARTL.NS": "Telecommunications",
-  "ITC.NS": "FMCG & Consumer Goods",
-  "KOTAKBANK.NS": "Financial Services",
-  "LT.NS": "Capital Goods & Infra",
-  "AXISBANK.NS": "Financial Services",
-  "HINDUNILVR.NS": "FMCG & Consumer Goods",
-  "BAJFINANCE.NS": "Financial Services",
-  "MARUTI.NS": "Automobile & Auto Parts",
-  "ASIANPAINT.NS": "Consumer Discretionary",
-  "HCLTECH.NS": "Information Technology",
-  "SUNPHARMA.NS": "Healthcare & Pharma",
-  "TITAN.NS": "Consumer Discretionary",
-  "ULTRACEMCO.NS": "Materials & Cement",
-  "TATASTEEL.NS": "Metals & Mining",
-  "NTPC.NS": "Utilities & Power",
-  "POWERGRID.NS": "Utilities & Power",
-  "ONGC.NS": "Energy & Oil",
-  "M&M.NS": "Automobile & Auto Parts",
-  "JSWSTEEL.NS": "Metals & Mining",
-  "COALINDIA.NS": "Metals & Mining",
-  "BAJAJFINSV.NS": "Financial Services",
-  "ADANIENT.NS": "Conglomerate & Infra",
-  "ADANIPORTS.NS": "Services & Logistics",
-  "BPCL.NS": "Energy & Oil",
-  "GRASIM.NS": "Materials & Cement",
-  "CIPLA.NS": "Healthcare & Pharma",
-  "NESTLEIND.NS": "FMCG & Consumer Goods",
-  "WIPRO.NS": "Information Technology",
-  "TATACONSUM.NS": "FMCG & Consumer Goods",
-  "DRREDDY.NS": "Healthcare & Pharma",
-  "EICHERMOT.NS": "Automobile & Auto Parts",
-  "HEROMOTOCO.NS": "Automobile & Auto Parts",
-  "DIVISLAB.NS": "Healthcare & Pharma",
-  "HINDALCO.NS": "Metals & Mining",
-  "APOLLOHOSP.NS": "Healthcare & Pharma",
-  "SHRIRAMFIN.NS": "Financial Services",
-  "TRENT.NS": "Consumer Discretionary",
-  "BEL.NS": "Aerospace & Defense",
-  "BRITANNIA.NS": "FMCG & Consumer Goods",
-  "SBILIFE.NS": "Financial Services",
-  "HDFCLIFE.NS": "Financial Services",
-  "TECHM.NS": "Information Technology",
-  "BAJAJ-AUTO.NS": "Automobile & Auto Parts",
-  "INDUSINDBK.NS": "Financial Services",
+  ...Object.fromEntries(NSE_MASTER_DIRECTORY.map((i) => [i.ticker, i.sector])),
+  "RELIANCE.BO": "Energy & Oil/Gas",
+  "TCS.BO": "Information Technology",
+  "HDFCBANK.BO": "Banking & Finance",
+  "INFY.BO": "Information Technology",
+  "ICICIBANK.BO": "Banking & Finance",
+  "SBIN.BO": "Banking & Finance",
+  "BHARTIARTL.BO": "Telecom",
+  "ITC.BO": "Fast Moving Consumer Goods",
+  "KOTAKBANK.BO": "Banking & Finance",
+  "LT.BO": "Infrastructure",
 };
 
 /**
@@ -127,6 +175,51 @@ export function getInstrumentSector(ticker: string): string {
   if (SECTOR_BY_TICKER[ticker]) return SECTOR_BY_TICKER[ticker];
   const clean = ticker.replace(/\.(NS|BO)$/i, "");
   return SECTOR_BY_TICKER[`${clean}.NS`] || "Indian Equities";
+}
+
+/**
+ * Returns all organized instruments in the master catalog.
+ */
+export function getAllNSEInstruments(): NSEInstrument[] {
+  return [...NSE_MASTER_DIRECTORY];
+}
+
+/**
+ * Returns instruments filtered by index category.
+ */
+export function getInstrumentsByIndex(indexId: string): NSEInstrument[] {
+  if (indexId === "ALL") return [...NSE_MASTER_DIRECTORY];
+  return NSE_MASTER_DIRECTORY.filter((i) => i.index === indexId);
+}
+
+/**
+ * Returns instruments filtered by industry sector.
+ */
+export function getInstrumentsBySector(sector: string): NSEInstrument[] {
+  if (sector === "ALL") return [...NSE_MASTER_DIRECTORY];
+  return NSE_MASTER_DIRECTORY.filter((i) => i.sector === sector);
+}
+
+/**
+ * Returns instruments filtered by market cap tier.
+ */
+export function getInstrumentsByCap(tier: string): NSEInstrument[] {
+  if (tier === "ALL") return [...NSE_MASTER_DIRECTORY];
+  return NSE_MASTER_DIRECTORY.filter((i) => i.marketCapTier === tier);
+}
+
+/**
+ * Searches instruments by ticker, name, or sector.
+ */
+export function searchNSEInstruments(query: string): NSEInstrument[] {
+  if (!query || !query.trim()) return [...NSE_MASTER_DIRECTORY];
+  const q = query.trim().toLowerCase();
+  return NSE_MASTER_DIRECTORY.filter(
+    (i) =>
+      i.ticker.toLowerCase().includes(q) ||
+      i.name.toLowerCase().includes(q) ||
+      i.sector.toLowerCase().includes(q)
+  );
 }
 
 /**

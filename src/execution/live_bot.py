@@ -39,7 +39,7 @@ from src.pipeline import MarketPredictionEngine, SingleAssetAnalysis
 
 logger = logging.getLogger(__name__)
 
-from src.config.markets import NIFTY_50_TICKERS, get_default_universe
+from src.config.markets import NIFTY_50_TICKERS, get_default_universe, NSE_MASTER_CATALOG
 
 # Global default calendar instance
 _default_calendar = MarketCalendarManager()
@@ -145,6 +145,19 @@ SEARCHABLE_INSTRUMENTS: List[Dict[str, str]] = [
     {"ticker": "AAPL", "name": "Apple Inc.", "category": "US_EQUITIES", "exchange": "NASDAQ", "sector": "Consumer Technology"},
     {"ticker": "NVDA", "name": "NVIDIA Corporation", "category": "US_EQUITIES", "exchange": "NASDAQ", "sector": "Semiconductors & AI"},
 ]
+
+# Enrich SEARCHABLE_INSTRUMENTS with the complete NSE Master Directory
+_existing_search_tickers = {item["ticker"] for item in SEARCHABLE_INSTRUMENTS}
+for _cat_entry in NSE_MASTER_CATALOG:
+    if _cat_entry["ticker"] not in _existing_search_tickers:
+        SEARCHABLE_INSTRUMENTS.append({
+            "ticker": _cat_entry["ticker"],
+            "name": _cat_entry["name"],
+            "category": "INDIAN_NSE",
+            "exchange": _cat_entry.get("exchange", "NSE"),
+            "sector": _cat_entry["sector"],
+        })
+        _existing_search_tickers.add(_cat_entry["ticker"])
 
 
 def get_exchange_session_status(ticker: str, market_type: str = "") -> Dict[str, Any]:

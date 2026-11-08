@@ -20,11 +20,11 @@ interface PositionsTableProps {
 export const PositionsTable: React.FC<PositionsTableProps> = ({
   positions,
   closedTrades,
-  currency = "USD",
+  currency = "INR",
   onClosePosition,
   onFlattenAll,
 }) => {
-  const currencySym = currency === "INR" ? "₹" : "$";
+  const currencySym = currency === "USD" ? "$" : "₹";
   const [activeTab, setActiveTab] = useState<"OPEN" | "CLOSED">("OPEN");
 
   const formatPrice = (p: number) => (Math.abs(p) > 0 && Math.abs(p) < 10 ? p.toFixed(4) : p.toFixed(2));

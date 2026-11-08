@@ -56,7 +56,7 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
   currentPrice,
   pendingOrders,
   isSessionGated = false,
-  currency = "USD",
+  currency = "INR",
   onPlaceOrder,
   onPlaceBotTrade,
   onCancelPendingOrder,
@@ -65,7 +65,7 @@ export const OrderControls: React.FC<OrderControlsProps> = ({
   onStepTick,
   onResetAccount,
 }) => {
-  const currencySym = currency === "INR" ? "₹" : "$";
+  const currencySym = currency === "USD" ? "$" : "₹";
   const [direction, setDirection] = useState<"LONG" | "SHORT" | "AUTO">("LONG");
   const [allocWeight, setAllocWeight] = useState<number>(10);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Clock, ShieldCheck, CalendarOff } from "lucide-react";
+import { Clock, CalendarOff } from "lucide-react";
 import { usePageVisibility } from "../hooks/usePageVisibility";
 import { SessionStatusInfo } from "../types";
 
@@ -27,41 +27,41 @@ export const BENCHMARK_CONFIG = [
     id: "NSE",
     primaryKey: "NSE_INDIA",
     aliases: ["NSE", "RELIANCE.NS", "NIFTY", "NIFTY_50"],
-    defaultName: "NSE India (Nifty 50)",
+    defaultName: "NSE Cash Mumbai",
     defaultRegion: "National Stock Exchange",
     defaultSchedule: "09:15–15:30 IST",
     timeZone: "Asia/Kolkata",
     tzName: "IST",
   },
   {
-    id: "NYSE",
-    primaryKey: "US_MARKETS",
-    aliases: ["NYSE", "NASDAQ", "NVDA", "AAPL"],
-    defaultName: "NYSE / NASDAQ",
-    defaultRegion: "US Equities",
-    defaultSchedule: "09:30–16:00 ET",
-    timeZone: "America/New_York",
-    tzName: "ET",
+    id: "BSE",
+    primaryKey: "BSE_INDIA",
+    aliases: ["BSE", "TCS.BO", "SENSEX", "BSE_SENSEX"],
+    defaultName: "BSE Sensex Mumbai",
+    defaultRegion: "Bombay Stock Exchange",
+    defaultSchedule: "09:15–15:30 IST",
+    timeZone: "Asia/Kolkata",
+    tzName: "IST",
   },
   {
-    id: "COMEX",
-    primaryKey: "CME_GLOBEX",
-    aliases: ["COMEX", "GC=F"],
-    defaultName: "CME COMEX",
-    defaultRegion: "Commodities (Gold GC=F)",
-    defaultSchedule: "23h/day Mon–Fri",
-    timeZone: "America/New_York",
-    tzName: "ET",
+    id: "NIFTY_50",
+    primaryKey: "NIFTY_50",
+    aliases: ["^NSEI", "NIFTY50", "NIFTY_50_INDEX"],
+    defaultName: "NIFTY 50 Benchmark",
+    defaultRegion: "Large-Cap Equities (^NSEI)",
+    defaultSchedule: "09:15–15:30 IST",
+    timeZone: "Asia/Kolkata",
+    tzName: "IST",
   },
   {
-    id: "CRYPTO",
-    primaryKey: "CRYPTO_247",
-    aliases: ["CRYPTO", "BTC-USD"],
-    defaultName: "Crypto 24/7",
-    defaultRegion: "Global (BTC / ETH)",
-    defaultSchedule: "24/7 Non-Stop",
-    timeZone: "UTC",
-    tzName: "UTC",
+    id: "BANK_NIFTY",
+    primaryKey: "BANK_NIFTY",
+    aliases: ["^NSEBANK", "BANKNIFTY", "BANK_NIFTY_INDEX"],
+    defaultName: "BANK NIFTY Benchmark",
+    defaultRegion: "Banking & Financials (^NSEBANK)",
+    defaultSchedule: "09:15–15:30 IST",
+    timeZone: "Asia/Kolkata",
+    tzName: "IST",
   },
 ];
 
@@ -133,195 +133,63 @@ export function getStatusStyles(state: DisplaySession["state"], isLive: boolean)
 
 export function computeOfflineSession(cfg: (typeof BENCHMARK_CONFIG)[0], now: Date): DisplaySession {
   const utcTime = now.getTime();
+  const istOffset = 5.5 * 3600 * 1000;
+  const istDate = new Date(utcTime + istOffset);
+  const day = istDate.getUTCDay();
+  const h = istDate.getUTCHours();
+  const m = istDate.getUTCMinutes();
+  const s = istDate.getUTCSeconds();
+  const minsToday = h * 60 + m;
+  const secsToday = minsToday * 60 + s;
 
-  if (cfg.id === "NSE") {
-    const istOffset = 5.5 * 3600 * 1000;
-    const istDate = new Date(utcTime + istOffset);
-    const day = istDate.getUTCDay();
-    const h = istDate.getUTCHours();
-    const m = istDate.getUTCMinutes();
-    const s = istDate.getUTCSeconds();
-    const minsToday = h * 60 + m;
-    const secsToday = minsToday * 60 + s;
+  let state: DisplaySession["state"] = "CLOSED";
+  let isOpen = false;
+  let label = "Opens in";
+  let secRemaining = 0;
 
-    let state: DisplaySession["state"] = "CLOSED";
-    let isOpen = false;
-    let label = "Opens in";
-    let secRemaining = 0;
-
-    if (day >= 1 && day <= 5) {
-      if (minsToday >= 555 && minsToday < 930) {
-        // 09:15 - 15:30
-        state = "OPEN";
-        isOpen = true;
-        label = "Closes in";
-        secRemaining = 930 * 60 - secsToday;
-      } else if (minsToday >= 540 && minsToday < 555) {
-        // 09:00 - 09:15
-        state = "PRE_MARKET";
-        label = "Opens in";
-        secRemaining = 555 * 60 - secsToday;
-      } else if (minsToday >= 930 && minsToday < 960) {
-        // 15:30 - 16:00
-        state = "POST_MARKET";
-        label = "Closes in";
-        secRemaining = 960 * 60 - secsToday;
-      } else if (minsToday < 540) {
-        state = "CLOSED";
-        secRemaining = 555 * 60 - secsToday;
-      } else {
-        state = "CLOSED";
-        const daysToNext = day === 5 ? 3 : 1;
-        secRemaining = daysToNext * 86400 + 555 * 60 - secsToday;
-      }
-    } else {
-      state = "WEEKEND";
-      label = "Opens Mon in";
-      const daysToMon = day === 0 ? 1 : 2;
-      secRemaining = daysToMon * 86400 + 555 * 60 - secsToday;
-    }
-
-    const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} IST`;
-    return {
-      id: "NSE",
-      name: cfg.defaultName,
-      region: cfg.defaultRegion,
-      schedule: cfg.defaultSchedule,
-      isOpen,
-      state,
-      localClock: clock,
-      countdownLabel: label,
-      countdownSeconds: Math.max(0, secRemaining),
-      isAuthoritative: false,
-    };
-  }
-
-  if (cfg.id === "NYSE") {
-    const isEDT = now.getMonth() >= 2 && now.getMonth() <= 10;
-    const nyOffset = (isEDT ? -4 : -5) * 3600 * 1000;
-    const nyDate = new Date(utcTime + nyOffset);
-    const day = nyDate.getUTCDay();
-    const h = nyDate.getUTCHours();
-    const m = nyDate.getUTCMinutes();
-    const s = nyDate.getUTCSeconds();
-    const minsToday = h * 60 + m;
-    const secsToday = minsToday * 60 + s;
-
-    let state: DisplaySession["state"] = "CLOSED";
-    let isOpen = false;
-    let label = "Opens in";
-    let secRemaining = 0;
-
-    if (day >= 1 && day <= 5) {
-      if (minsToday >= 570 && minsToday < 960) {
-        // 09:30 - 16:00
-        state = "OPEN";
-        isOpen = true;
-        label = "Closes in";
-        secRemaining = 960 * 60 - secsToday;
-      } else if (minsToday >= 240 && minsToday < 570) {
-        // 04:00 - 09:30
-        state = "PRE_MARKET";
-        label = "Opens in";
-        secRemaining = 570 * 60 - secsToday;
-      } else if (minsToday >= 960 && minsToday < 1200) {
-        // 16:00 - 20:00
-        state = "POST_MARKET";
-        label = "Closes in";
-        secRemaining = 1200 * 60 - secsToday;
-      } else if (minsToday < 240) {
-        state = "CLOSED";
-        secRemaining = 570 * 60 - secsToday;
-      } else {
-        state = "CLOSED";
-        const daysToNext = day === 5 ? 3 : 1;
-        secRemaining = daysToNext * 86400 + 570 * 60 - secsToday;
-      }
-    } else {
-      state = "WEEKEND";
-      label = "Opens Mon in";
-      const daysToMon = day === 0 ? 1 : 2;
-      secRemaining = daysToMon * 86400 + 570 * 60 - secsToday;
-    }
-
-    const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} ${isEDT ? "EDT" : "EST"}`;
-    return {
-      id: "NYSE",
-      name: cfg.defaultName,
-      region: cfg.defaultRegion,
-      schedule: `09:30–16:00 ${isEDT ? "EDT" : "EST"}`,
-      isOpen,
-      state,
-      localClock: clock,
-      countdownLabel: label,
-      countdownSeconds: Math.max(0, secRemaining),
-      isAuthoritative: false,
-    };
-  }
-
-  if (cfg.id === "COMEX") {
-    const isEDT = now.getMonth() >= 2 && now.getMonth() <= 10;
-    const nyOffset = (isEDT ? -4 : -5) * 3600 * 1000;
-    const nyDate = new Date(utcTime + nyOffset);
-    const day = nyDate.getUTCDay();
-    const h = nyDate.getUTCHours();
-    const m = nyDate.getUTCMinutes();
-    const s = nyDate.getUTCSeconds();
-    const secsToday = (h * 60 + m) * 60 + s;
-
-    let state: DisplaySession["state"] = "CLOSED";
-    let isOpen = false;
-    let label = "Opens in";
-    let secRemaining = 0;
-
-    const isWeekend = day === 6 || (day === 0 && h < 18) || (day === 5 && h >= 17);
-    const isBreak = !isWeekend && h === 17;
-
-    if (!isWeekend && !isBreak) {
+  if (day >= 1 && day <= 5) {
+    if (minsToday >= 555 && minsToday < 930) {
+      // 09:15 - 15:30
       state = "OPEN";
       isOpen = true;
-      label = "Break/Close in";
-      let targetH = 17;
-      let diff = targetH - h;
-      if (diff <= 0) diff += 24;
-      secRemaining = diff * 3600 - (m * 60 + s);
-    } else if (isBreak) {
+      label = "Closes in";
+      secRemaining = 930 * 60 - secsToday;
+    } else if (minsToday >= 540 && minsToday < 555) {
+      // 09:00 - 09:15
+      state = "PRE_MARKET";
+      label = "Opens in";
+      secRemaining = 555 * 60 - secsToday;
+    } else if (minsToday >= 930 && minsToday < 960) {
+      // 15:30 - 16:00
+      state = "POST_MARKET";
+      label = "Closes in";
+      secRemaining = 960 * 60 - secsToday;
+    } else if (minsToday < 540) {
       state = "CLOSED";
-      label = "Reopens in";
-      secRemaining = 3600 - (m * 60 + s);
+      secRemaining = 555 * 60 - secsToday;
     } else {
-      state = "WEEKEND";
-      label = "Opens Sun in";
-      const daysToSun = (7 - day) % 7;
-      secRemaining = daysToSun * 86400 + 18 * 3600 - secsToday;
+      state = "CLOSED";
+      const daysToNext = day === 5 ? 3 : 1;
+      secRemaining = daysToNext * 86400 + 555 * 60 - secsToday;
     }
-
-    const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} ${isEDT ? "EDT" : "EST"}`;
-    return {
-      id: "COMEX",
-      name: cfg.defaultName,
-      region: cfg.defaultRegion,
-      schedule: cfg.defaultSchedule,
-      isOpen,
-      state,
-      localClock: clock,
-      countdownLabel: label,
-      countdownSeconds: Math.max(0, secRemaining),
-      isAuthoritative: false,
-    };
+  } else {
+    state = "WEEKEND";
+    label = "Opens Mon in";
+    const daysToMon = day === 0 ? 1 : 2;
+    secRemaining = daysToMon * 86400 + 555 * 60 - secsToday;
   }
 
-  // CRYPTO 24/7
+  const clock = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} IST`;
   return {
-    id: "CRYPTO",
+    id: cfg.id,
     name: cfg.defaultName,
     region: cfg.defaultRegion,
     schedule: cfg.defaultSchedule,
-    isOpen: true,
-    state: "OPEN",
-    localClock: now.toISOString().substring(11, 19) + " UTC",
-    countdownLabel: "Non-Stop",
-    countdownSeconds: 0,
+    isOpen,
+    state,
+    localClock: clock,
+    countdownLabel: label,
+    countdownSeconds: Math.max(0, secRemaining),
     isAuthoritative: false,
   };
 }
@@ -347,10 +215,15 @@ export function resolveSessions(
       }
     }
 
-    // If backend session exists, use authoritative data
     if (backendSess) {
-      const isOpen = backendSess.is_open ?? (backendSess.state === "OPEN");
-      const state = backendSess.state;
+      const isOpen = Boolean(backendSess.is_open);
+      let state: DisplaySession["state"] = "CLOSED";
+      if (backendSess.state) {
+        state = backendSess.state as DisplaySession["state"];
+      } else if (isOpen) {
+        state = "OPEN";
+      }
+
       const holidayName = backendSess.holiday_name;
 
       // Dynamic countdown: compute remaining seconds from UTC target timestamp
@@ -366,15 +239,13 @@ export function resolveSessions(
       // Determine label
       let countdownLabel = "Opens in";
       if (state === "OPEN") {
-        countdownLabel = cfg.id === "COMEX" ? "Break/Close in" : "Closes in";
+        countdownLabel = "Closes in";
       } else if (state === "HOLIDAY") {
         countdownLabel = holidayName ? `${holidayName} (Opens in)` : "Holiday (Opens in)";
       } else if (state === "WEEKEND") {
-        countdownLabel = cfg.id === "COMEX" ? "Opens Sun in" : "Opens Mon in";
+        countdownLabel = "Opens Mon in";
       } else if (state === "POST_MARKET") {
         countdownLabel = "Closes in";
-      } else if (cfg.id === "CRYPTO") {
-        countdownLabel = "Non-Stop";
       }
 
       // Format local clock in exchange timezone
@@ -468,14 +339,7 @@ export const MarketSessionRibbon: React.FC<MarketSessionRibbonProps> = ({
                 {s.localClock}
               </span>
               <span className={`font-semibold ${styles.timerText}`}>
-                {s.countdownLabel === "Non-Stop" ? (
-                  <span className="flex items-center text-sky-400">
-                    <ShieldCheck className="w-3 h-3 mr-1" />
-                    24/7/365
-                  </span>
-                ) : (
-                  `${s.countdownLabel} ${formatCountdown(s.countdownSeconds)}`
-                )}
+                {`${s.countdownLabel} ${formatCountdown(s.countdownSeconds)}`}
               </span>
             </div>
 

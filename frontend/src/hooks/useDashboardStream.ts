@@ -467,7 +467,7 @@ export function useDashboardStream({
   );
   const isSessionRunning = activeSession?.status === "RUNNING";
   const isSessionPaused = activeSession?.status === "PAUSED";
-  const sessionCurrency = activeSession?.currency ?? state?.currency ?? "USD";
+  const sessionCurrency = activeSession?.currency ?? state?.currency ?? "INR";
 
   // Session Action Handlers
   const startSession = useCallback(

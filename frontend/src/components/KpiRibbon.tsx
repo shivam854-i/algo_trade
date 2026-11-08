@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  DollarSign,
   TrendingUp,
   TrendingDown,
   Award,
@@ -15,8 +14,8 @@ interface KpiRibbonProps {
   currency?: string;
 }
 
-export const KpiRibbon: React.FC<KpiRibbonProps> = ({ account, currency = "USD" }) => {
-  const currencySym = currency === "INR" ? "₹" : "$";
+export const KpiRibbon: React.FC<KpiRibbonProps> = ({ account, currency = "INR" }) => {
+  const currencySym = currency === "USD" ? "$" : "₹";
   const equity = account?.total_equity ?? 100000;
   const cash =
     account?.available_cash ??
@@ -45,25 +44,26 @@ export const KpiRibbon: React.FC<KpiRibbonProps> = ({ account, currency = "USD" 
   const isAlphaPos = alphaPct >= 0;
   const isUnrealizedPos = unrealizedPnL >= 0;
 
+  const formatCurrency = (val: number, decimals: number = 2) => {
+    return val.toLocaleString("en-IN", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  };
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {/* 1. Virtual Account Balance & Cash */}
       <div className="glass-panel rounded-xl p-3 flex flex-col justify-between">
         <div className="flex items-center justify-between text-slate-400 text-xs font-mono">
           <span>Virtual Equity (Paper)</span>
-          {currency === "INR" ? (
-            <span className="font-bold text-sky-400">₹</span>
-          ) : (
-            <DollarSign className="w-3.5 h-3.5 text-sky-400" />
-          )}
+          <span className="font-bold text-sky-400 font-mono">₹</span>
         </div>
         <div className="mt-1 text-lg font-bold font-mono text-slate-100">
-          {currencySym}
-          {equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {currencySym}{formatCurrency(equity, 2)}
         </div>
         <div className="text-[11px] font-mono text-slate-500">
-          Cash: {currencySym}
-          {cash.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          Cash: {currencySym}{formatCurrency(cash, 0)}
         </div>
       </div>
 
@@ -120,10 +120,10 @@ export const KpiRibbon: React.FC<KpiRibbonProps> = ({ account, currency = "USD" 
             isUnrealizedPos ? "text-emerald-400" : "text-rose-400"
           }`}
         >
-          {isUnrealizedPos ? "+" : ""}{currencySym}{unrealizedPnL.toFixed(2)}
+          {isUnrealizedPos ? "+" : ""}{currencySym}{formatCurrency(unrealizedPnL, 2)}
         </div>
         <div className="text-[11px] font-mono text-slate-500">
-          Realized: {currencySym}{realizedPnL.toFixed(2)}
+          Realized: {realizedPnL >= 0 ? "+" : ""}{currencySym}{formatCurrency(realizedPnL, 2)}
         </div>
       </div>
 
@@ -148,7 +148,7 @@ export const KpiRibbon: React.FC<KpiRibbonProps> = ({ account, currency = "USD" 
           <Percent className="w-3.5 h-3.5 text-slate-500" />
         </div>
         <div className="mt-1 text-lg font-bold font-mono text-slate-300">
-          {currencySym}{frictionPaid.toFixed(2)}
+          {currencySym}{formatCurrency(frictionPaid, 2)}
         </div>
         <div className="text-[11px] font-mono text-slate-500">
           Commissions + Spread/Slippage

@@ -222,6 +222,36 @@ def get_preset_universes():
     }
 
 
+@app.get("/api/market/directory", tags=["Market Data"])
+def get_market_directory():
+    """Returns the comprehensive, structured NSE Master Directory organized by index, sector, and market cap."""
+    from src.config.markets import (
+        NSE_MASTER_CATALOG,
+        NIFTY_50_TICKERS,
+        NIFTY_NEXT_50_TICKERS,
+        NIFTY_MIDCAP_TICKERS,
+        BSE_SENSEX_TICKERS,
+    )
+    sectors = {}
+    for item in NSE_MASTER_CATALOG:
+        sec = item["sector"]
+        sectors[sec] = sectors.get(sec, 0) + 1
+
+    indices = {
+        "NIFTY_50": len(NIFTY_50_TICKERS),
+        "NIFTY_NEXT_50": len(NIFTY_NEXT_50_TICKERS),
+        "NIFTY_MIDCAP": len(NIFTY_MIDCAP_TICKERS),
+        "BSE_SENSEX": len(BSE_SENSEX_TICKERS),
+    }
+
+    return {
+        "total": len(NSE_MASTER_CATALOG),
+        "instruments": NSE_MASTER_CATALOG,
+        "sectors": sectors,
+        "indices": indices,
+    }
+
+
 @app.get("/api/forecast/{ticker}", tags=["Prediction"])
 def get_ticker_forecast(
     ticker: str,
